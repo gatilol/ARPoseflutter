@@ -114,47 +114,49 @@ class _ARCameraScreenState extends State<ARCameraScreen>
   }
 
   Future<void> _takePhoto() async {
-    try {
-      // Cacher les overlays
-      setState(() {
-        isCapturingPhoto = true;
-      });
+  try {
+    setState(() {
+      isCapturingPhoto = true;
+    });
 
-      // Attendre que l'UI se mette à jour
-      await Future.delayed(Duration(milliseconds: 50));
+    await Future.delayed(Duration(milliseconds: 10));
 
-      // Capturer l'écran
-      final Uint8List? imageBytes = await screenshotController.capture();
-      
-      // Réafficher les overlays immédiatement
-      setState(() {
-        isCapturingPhoto = false;
-      });
-      
-      if (imageBytes == null) {
-        throw Exception('Impossible de capturer l\'écran');
-      }
+    // Lancer la capture (sans await)
+    final captureFuture = screenshotController.capture();
+    
+    // Attendre un peu pour que la capture commence vraiment
+    await Future.delayed(Duration(milliseconds: 500)); // ← Nouveau délai !
+    
+    // Réafficher les overlays maintenant
+    setState(() {
+      isCapturingPhoto = false;
+    });
+    
+    // Attendre le résultat de la capture
+    final Uint8List? imageBytes = await captureFuture;
+    
+    if (imageBytes == null) {
+      throw Exception('Impossible de capturer l\'écran');
+    }
 
-      // Sauvegarder en arrière-plan pour ne pas bloquer l'UI
-      _savePhoto(imageBytes);
-
-      HapticFeedback.mediumImpact();
-    } catch (e) {
-      setState(() {
-        isCapturingPhoto = false;
-      });
-      
-      print('Erreur photo: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+    _savePhoto(imageBytes);
+    HapticFeedback.mediumImpact();
+  } catch (e) {
+    setState(() {
+      isCapturingPhoto = false;
+    });
+    
+    print('Erreur photo: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
+}
 
   Future<void> _savePhoto(Uint8List imageBytes) async {
     try {
