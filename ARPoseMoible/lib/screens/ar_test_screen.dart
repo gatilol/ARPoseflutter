@@ -26,17 +26,32 @@ class _ArTestScreenState extends State<ArTestScreen> {
   late ARObjectManager arObjectManager;
   late ARAnchorManager arAnchorManager;
 
-  final String modelPath = "assets/models/eva_01_esg.glb"; // vérifie que ce fichier est listé dans pubspec.yaml
+  /// liste des modele dans la scene
+  List<ARNode> placedNodes = [];
+
+  //
+  final String modelPath = "assets/models/eva_01_esg.glb";
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('AR Test')),
-      body: ARView(
-        // type de détection de plan (horizontal ici)
-        planeDetectionConfig: PlaneDetectionConfig.horizontal,
-        // callback OBLIGATOIRE : la signature attend 4 paramètres
-        onARViewCreated: onARViewCreated,
+      body: Stack(
+        children: [
+          ARView(
+            onARViewCreated: onARViewCreated,
+            planeDetectionConfig: PlaneDetectionConfig.horizontal,
+          ),
+
+          /// bouton pour supprimer
+          Positioned(
+            bottom: 30,
+            right: 20,
+            child: FloatingActionButton(
+              onPressed: removeAllModels,
+              child: Icon(Icons.delete, size: 28),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -101,6 +116,13 @@ class _ArTestScreenState extends State<ArTestScreen> {
     if (nodeId == null) {
       debugPrint("Erreur : impossible d'ajouter le modèle");
     }
+  }
+
+  Future<void> removeAllModels() async {
+    for (var node in placedNodes) {
+      await arObjectManager.removeNode(node);
+    }
+    placedNodes.clear();
   }
 
   @override
