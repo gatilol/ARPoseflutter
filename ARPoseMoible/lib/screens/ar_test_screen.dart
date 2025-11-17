@@ -51,6 +51,7 @@ class _ArTestScreenState extends State<ArTestScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.black,
       body: Screenshot(
         controller: screenshotController,
         child: Stack(
@@ -83,9 +84,9 @@ class _ArTestScreenState extends State<ArTestScreen> {
                 ),
               ),
 
-              // Bouton retour
+              // Bouton retour en haut à gauche
               Positioned(
-                top: 50,
+                top: MediaQuery.of(context).padding.top + 16,
                 left: 16,
                 child: Material(
                   color: Colors.transparent,
@@ -105,10 +106,10 @@ class _ArTestScreenState extends State<ArTestScreen> {
                 ),
               ),
 
-              // Instructions
+              // Instructions (affichées tant qu'aucun modèle n'est placé)
               if (!hasPlacedModel)
                 Positioned(
-                  top: 120,
+                  top: MediaQuery.of(context).padding.top + 90,
                   left: 0,
                   right: 0,
                   child: Center(
@@ -116,7 +117,7 @@ class _ArTestScreenState extends State<ArTestScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       margin: const EdgeInsets.symmetric(horizontal: 32),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.6),
+                        color: Colors.black.withOpacity(0.7),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: Colors.white.withOpacity(0.3)),
                       ),
@@ -160,29 +161,31 @@ class _ArTestScreenState extends State<ArTestScreen> {
                 ),
               ),
 
-              // Boutons en bas
+              // Bouton Photo centré en bas
               Positioned(
                 bottom: 50,
                 left: 0,
                 right: 0,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 40),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-
-                      // Bouton Photo (plus grand)
-                      _buildCircleButton(
-                        icon: Icons.camera_alt,
-                        onPressed: _takePhoto,
-                        size: 80,
-                        isPrimary: true,
-                      ),
-
-                      // Espace vide pour équilibrer
-                      const SizedBox(width: 60),
-                    ],
+                child: Center(
+                  child: _buildCircleButton(
+                    icon: Icons.camera_alt,
+                    onPressed: _takePhoto,
+                    size: 80,
+                    isPrimary: true,
                   ),
+                ),
+              ),
+
+              // Bouton Supprimer en bas à droite
+              Positioned(
+                bottom: 50,
+                right: 20,
+                child: FloatingActionButton(
+                  heroTag: 'delete',
+                  onPressed: removeAllModels,
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  child: const Icon(Icons.delete, size: 28),
                 ),
               ),
             ],
@@ -211,6 +214,8 @@ class _ArTestScreenState extends State<ArTestScreen> {
     );
 
     arSessionManager.onPlaneOrPointTap = onPlaneOrPointTapped;
+    
+    debugPrint("✅ ARCore initialisé");
   }
 
   Future<void> onPlaneOrPointTapped(List<ARHitTestResult> hits) async {
@@ -251,35 +256,78 @@ class _ArTestScreenState extends State<ArTestScreen> {
     }
   }
 
+  /// Supprimer tous les modèles de la scène
+  Future<void> removeAllModels() async {
+    if (placedNodes.isEmpty) {
+      debugPrint("⚠️ Aucun modèle à supprimer");
+      return;
+    }
+
+    debugPrint("🗑️ Suppression de ${placedNodes.length} modèle(s)...");
+
+    for (var node in placedNodes) {
+      await arObjectManager.removeNode(node);
+    }
+
+    placedNodes.clear();
+
+    setState(() {
+      hasPlacedModel = false;
+    });
+
+    HapticFeedback.lightImpact();
+    debugPrint("✅ Tous les modèles supprimés");
+
+    // Confirmation visuelle
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 8),
+              Text('Modèles supprimés'),
+            ],
+          ),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
+  }
 
   /// Prendre une photo de la scène AR et l'enregistrer dans la galerie
   Future<void> _takePhoto() async {
     try {
+      debugPrint("📸 Début de la capture...");
+      
       // 1. Masquer les overlays
       setState(() {
         isCapturingPhoto = true;
       });
 
-      // 2. Attendre un peu pour que l'UI se mette à jour
+      // 2. Attendre que l'UI se mette à jour
       await Future.delayed(const Duration(milliseconds: 100));
 
       // 3. Lancer la capture
       final captureFuture = screenshotController.capture();
 
-      // 4. Attendre que la capture commence vraiment
+      // 4. Attendre que la capture se fasse
       await Future.delayed(const Duration(milliseconds: 500));
 
-      // 5. Réafficher les overlays maintenant
+      // 5. Réafficher les overlays
       setState(() {
         isCapturingPhoto = false;
       });
 
-      // 6. Attendre le résultat de la capture
+      // 6. Récupérer le résultat
       final Uint8List? imageBytes = await captureFuture;
 
       if (imageBytes == null) {
         throw Exception('Impossible de capturer l\'écran');
       }
+
+      debugPrint("✅ Capture réussie (${imageBytes.length} bytes)");
 
       // 7. Sauvegarder dans la galerie
       await _savePhotoToGallery(imageBytes);
@@ -325,16 +373,16 @@ class _ArTestScreenState extends State<ArTestScreen> {
       // 3. Confirmation visuelle
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Row(
-              children: const [
+              children: [
                 Icon(Icons.check_circle, color: Colors.white),
                 SizedBox(width: 8),
                 Text('Photo AR enregistrée dans la galerie !'),
               ],
             ),
             backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
+            duration: Duration(seconds: 2),
           ),
         );
       }
@@ -400,9 +448,7 @@ class _ArTestScreenState extends State<ArTestScreen> {
           ),
           child: Icon(
             icon,
-            color: isPrimary
-                ? Colors.blue
-                : (color ?? Colors.black87),
+            color: isPrimary ? Colors.blue : (color ?? Colors.black87),
             size: isPrimary ? 40 : 28,
           ),
         ),
