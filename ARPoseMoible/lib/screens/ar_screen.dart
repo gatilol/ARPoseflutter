@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:screenshot/screenshot.dart';
+import 'package:flutter/services.dart';
 import '../models/ar_state.dart';
 import '../services/ar_service.dart';
 import '../services/photo_service.dart';
@@ -12,25 +13,26 @@ import 'package:ar_flutter_plugin_2/managers/ar_object_manager.dart';
 import 'package:ar_flutter_plugin_2/managers/ar_session_manager.dart';
 import 'package:ar_flutter_plugin_2/datatypes/config_planedetection.dart';
 
-class ArTestScreen extends StatefulWidget {
-  const ArTestScreen({super.key});
+class ArScreen extends StatefulWidget {
+  const ArScreen({super.key});
 
   @override
-  State<ArTestScreen> createState() => _ArTestScreenState();
+  State<ArScreen> createState() => _ArScreenState();
 }
 
-class _ArTestScreenState extends State<ArTestScreen> {
+class _ArScreenState extends State<ArScreen> {
   late final ARState arState;
   late final ARService arService;
   late final PhotoService photoService;
   final ScreenshotController screenshotController = ScreenshotController();
   final String modelPath = 'assets/models/eva_01_esg.glb';
+  final String reticlePath = 'assets/models/reticle.glb';
 
   @override
   void initState() {
     super.initState();
     arState = ARState();
-    arService = ARService(state: arState, modelPath: modelPath);
+    arService = ARService(state: arState, modelPath: modelPath, reticlePath: reticlePath);
     photoService = PhotoService(state: arState);
   }
 
@@ -66,6 +68,10 @@ class _ArTestScreenState extends State<ArTestScreen> {
                   onDelete: () async {
                     await arService.removeAllModels();
                   },
+                  onPlaceModel: () async {
+                    await arService.placeModelAtReticle();
+                    HapticFeedback.mediumImpact();
+                  }
                 ),
               ],
             ),

@@ -128,7 +128,7 @@ class _WebViewPageState extends State<WebViewPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const ArTestScreen(),
+        builder: (context) => const ArScreen(),
       ),
     ).then((result) {
       // Quand l'utilisateur revient de l'AR

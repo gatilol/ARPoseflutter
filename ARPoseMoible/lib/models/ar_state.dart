@@ -3,8 +3,10 @@ import 'package:ar_flutter_plugin_2/models/ar_node.dart';
 
 class ARState extends ChangeNotifier {
   final List<ARNode> nodes = [];
+
   bool hasPlacedModel = false;
   bool isCapturing = false;
+  bool reticleVisible = false;
 
   void addNode(ARNode node) {
     nodes.add(node);
@@ -26,6 +28,11 @@ class ARState extends ChangeNotifier {
 
   void setCapturing(bool value) {
     isCapturing = value;
+    notifyListeners();
+  }
+
+  void setReticleVisible(bool value) {
+    reticleVisible = value;
     notifyListeners();
   }
 }

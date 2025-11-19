@@ -7,12 +7,14 @@ class AROverlays extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback onTakePhoto;
   final VoidCallback onDelete;
+  final VoidCallback onPlaceModel;
 
   const AROverlays({
     required this.state,
     required this.onClose,
     required this.onTakePhoto,
     required this.onDelete,
+    required this.onPlaceModel,
     super.key,
   });
 
@@ -58,6 +60,8 @@ class AROverlays extends StatelessWidget {
         Positioned(bottom: 50,left:0,right:0,child: Center(child: CircleButton(icon: Icons.camera_alt, onPressed: onTakePhoto, size:80, isPrimary: true))),
         // delete button
         Positioned(bottom: 50,right:20,child: FloatingActionButton(heroTag:'delete', onPressed: onDelete, backgroundColor: Colors.red, child: const Icon(Icons.delete))),
+        // place model button
+        Positioned(bottom: 50,left:20,child: FloatingActionButton(heroTag:'placeModel', onPressed: onPlaceModel, backgroundColor: Colors.blue, child: const Icon(Icons.add_location_alt))),
       ],
     );
   }
