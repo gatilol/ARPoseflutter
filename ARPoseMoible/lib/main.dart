@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:test_webview/screens/ar_test_screen.dart';
+import 'package:test_webview/screens/ar_screen.dart';
 
 
 void main() {
