@@ -9,7 +9,6 @@ import 'package:ar_flutter_plugin_2/datatypes/node_types.dart';
 import 'package:vector_math/vector_math_64.dart' as vector;
 import 'package:flutter/foundation.dart';
 
-
 import '../models/ar_state.dart';
 
 class ARService {
@@ -18,19 +17,24 @@ class ARService {
   late ARAnchorManager anchorManager;
 
   final ARState state;
-  final String modelPath;    // modèle final (eva_01_esg.glb)
-  final String reticlePath;  // reticle.glb
+  String modelPath;          // NON final pour pouvoir le changer
+  final String reticlePath;
 
   // internal tracking
   ARNode? _reticleNode;
   ARPlaneAnchor? _reticleAnchor;
-  // String? _reticleAnchorId; //mis en com car par utiliser pour l'instant
 
   ARService({
     required this.state,
     required this.modelPath,
     required this.reticlePath,
   });
+
+  // Met à jour le chemin du modèle
+  void updateModelPath(String newModelPath) {
+    modelPath = newModelPath;
+    debugPrint('Model path updated to: $newModelPath');
+  }
 
   // à brancher sur onARViewCreated
   void onARViewCreated(
@@ -64,8 +68,6 @@ class ARService {
       orElse: () => hits.first,
     );
 
-    // if (planeHit == null) return;  //jamais null alors ne sert a rien
-
     // Create anchor for reticle at hit transform
     final anchor = ARPlaneAnchor(transformation: planeHit.worldTransform);
 
@@ -82,9 +84,7 @@ class ARService {
     final reticleNode = ARNode(
       type: NodeType.localGLTF2,
       uri: reticlePath,
-      // tweak scale/rotation if needed
       scale: vector.Vector3(0.15, 0.15, 0.15),
-      // You can also set eulerAngles/rotation if reticle needs rotation
     );
 
     final nodeId = await objectManager.addNode(reticleNode, planeAnchor: anchor);
@@ -93,7 +93,6 @@ class ARService {
       // save references
       _reticleNode = reticleNode;
       _reticleAnchor = anchor;
-      //_reticleAnchorId = "reticle_anchor";      //ne sert a rien vu la mise en comme au dessus 
 
       // expose to UI via state
       state.setReticleVisible(true);
@@ -130,8 +129,6 @@ class ARService {
         await objectManager.removeNode(_reticleNode!);
         _reticleNode = null;
         state.setReticleVisible(false);
-
-        // Optionally provide haptic feedback
       }
     } catch (e) {
       // log but don't crash

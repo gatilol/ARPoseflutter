@@ -5,6 +5,7 @@ import '../models/ar_state.dart';
 import '../services/ar_service.dart';
 import '../services/photo_service.dart';
 import '../widgets/ar_overlays.dart';
+import '../widgets/model_selector_menu.dart';
 import 'package:ar_flutter_plugin_2/widgets/ar_view.dart';
 import 'package:ar_flutter_plugin_2/datatypes/config_planedetection.dart';
 
@@ -17,18 +18,49 @@ class ArScreen extends StatefulWidget {
 
 class _ArScreenState extends State<ArScreen> {
   late final ARState arState;
-  late final ARService arService;
+  late ARService arService;
   late final PhotoService photoService;
   final ScreenshotController screenshotController = ScreenshotController();
-  final String modelPath = 'assets/models/eva_01_esg.glb';
+
+  // État du menu et modèle sélectionné
+  bool isModelMenuOpen = false;
+  String currentModelPath = 'assets/models/eva_01_esg.glb';
   final String reticlePath = 'assets/models/reticle.glb';
 
   @override
   void initState() {
     super.initState();
     arState = ARState();
-    arService = ARService(state: arState, modelPath: modelPath, reticlePath: reticlePath);
+    arService = ARService(
+        state: arState,
+        modelPath: currentModelPath,
+        reticlePath: reticlePath
+    );
     photoService = PhotoService(state: arState);
+  }
+
+  // Méthode pour changer de modèle
+  void _onModelSelected(Model3D model) {
+    setState(() {
+      currentModelPath = model.path;
+    });
+
+    // Mettre à jour le chemin du modèle dans le service AR existant
+    arService.updateModelPath(currentModelPath);
+
+    // Feedback haptique
+    HapticFeedback.lightImpact();
+
+    // Afficher un message
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Modèle "${model.name}" sélectionné'),
+          duration: const Duration(seconds: 2),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    }
   }
 
   @override
@@ -48,15 +80,21 @@ class _ArScreenState extends State<ArScreen> {
                   },
                   planeDetectionConfig: PlaneDetectionConfig.horizontal,
                 ),
+
                 AROverlays(
                   state: arState,
                   onClose: () => Navigator.pop(context),
                   onTakePhoto: () async {
                     try {
-                      await photoService.takeAndSavePhoto(screenshotController,context);
+                      await photoService.takeAndSavePhoto(screenshotController, context);
                     } catch (e) {
                       if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content: Text('Erreur: $e'),
+                                backgroundColor: Colors.red
+                            )
+                        );
                       }
                     }
                   },
@@ -66,7 +104,24 @@ class _ArScreenState extends State<ArScreen> {
                   onPlaceModel: () async {
                     await arService.placeModelAtReticle();
                     HapticFeedback.mediumImpact();
-                  }
+                  },
+                  onOpenModelMenu: () {
+                    setState(() {
+                      isModelMenuOpen = true;
+                    });
+                  },
+                ),
+
+                // Menu de sélection des modèles
+                ModelSelectorMenu(
+                  isOpen: isModelMenuOpen,
+                  onClose: () {
+                    setState(() {
+                      isModelMenuOpen = false;
+                    });
+                  },
+                  onModelSelected: _onModelSelected,
+                  currentModelPath: currentModelPath,
                 ),
               ],
             ),
