@@ -8,6 +8,7 @@ import 'package:ar_flutter_plugin_2/datatypes/hittest_result_types.dart';
 import 'package:ar_flutter_plugin_2/datatypes/node_types.dart';
 import 'package:vector_math/vector_math_64.dart' as vector;
 import 'package:flutter/foundation.dart';
+import 'dart:math' as math;
 
 import '../models/ar_state.dart';
 
@@ -23,6 +24,7 @@ class ARService {
   // internal tracking
   ARNode? _reticleNode;
   ARPlaneAnchor? _reticleAnchor;
+  // String? _reticleAnchorId; //mis en com car par utiliser pour l'instant
 
   ARService({
     required this.state,
@@ -68,8 +70,19 @@ class ARService {
       orElse: () => hits.first,
     );
 
-    // Create anchor for reticle at hit transform
-    final anchor = ARPlaneAnchor(transformation: planeHit.worldTransform);
+    // ✨ MODIFIER LA TRANSFORMATION DE L'ANCHOR
+    var anchorTransformation = planeHit.worldTransform;
+
+    // Créer une matrice de rotation
+    final rotationMatrix = vector.Matrix4.identity();
+    final rotationAxis = vector.Vector3(1.0, 0.0, 0.0); // Axe X
+    rotationMatrix.rotate(rotationAxis, -math.pi / 2); // -90°
+
+    // Combiner la transformation du hit avec la rotation
+    anchorTransformation = anchorTransformation * rotationMatrix;
+
+    // Create anchor avec la transformation modifiée
+    final anchor = ARPlaneAnchor(transformation: anchorTransformation);
 
     // Remove previous reticle anchor+node if exists
     await _removeReticleSilent();
@@ -80,11 +93,13 @@ class ARService {
       return;
     }
 
-    // create reticle node attached to the anchor
+    // create reticle node attached to the anchor (pas de rotation ici)
     final reticleNode = ARNode(
       type: NodeType.localGLTF2,
       uri: reticlePath,
+      // tweak scale/rotation if needed
       scale: vector.Vector3(0.15, 0.15, 0.15),
+      // You can also set eulerAngles/rotation if reticle needs rotation
     );
 
     final nodeId = await objectManager.addNode(reticleNode, planeAnchor: anchor);
@@ -93,6 +108,7 @@ class ARService {
       // save references
       _reticleNode = reticleNode;
       _reticleAnchor = anchor;
+      //_reticleAnchorId = "reticle_anchor";      //ne sert a rien vu la mise en comme au dessus 
 
       // expose to UI via state
       state.setReticleVisible(true);
@@ -112,14 +128,35 @@ class ARService {
     }
 
     try {
+      // ✨ CRÉER UN NOUVEL ANCHOR SANS ROTATION pour le modèle final
+      // Récupérer la transformation du reticle anchor
+      var modelTransformation = _reticleAnchor!.transformation;
+
+      // Annuler la rotation en appliquant la rotation inverse
+      final inverseRotationMatrix = vector.Matrix4.identity();
+      final rotationAxis = vector.Vector3(1.0, 0.0, 0.0);
+      inverseRotationMatrix.rotate(rotationAxis, math.pi / 2); // +90° (inverse de -90°)
+
+      // Appliquer la rotation inverse
+      modelTransformation = modelTransformation * inverseRotationMatrix;
+
+      // Créer un nouvel anchor pour le modèle final (sans rotation)
+      final modelAnchor = ARPlaneAnchor(transformation: modelTransformation);
+      final modelAnchorId = await anchorManager.addAnchor(modelAnchor);
+
+      if (modelAnchorId == null) {
+        debugPrint('Failed to add model anchor');
+        return;
+      }
+
       final node = ARNode(
         type: NodeType.localGLTF2,
         uri: modelPath,
-        scale: vector.Vector3(0.4, 0.4, 0.4),
+        scale: vector.Vector3(1.0, 1.0, 1.0),
       );
 
-      // attach final model to the SAME anchor used by the reticle
-      final nodeId = await objectManager.addNode(node, planeAnchor: _reticleAnchor);
+      // attach final model au NOUVEL anchor (sans rotation)
+      final nodeId = await objectManager.addNode(node, planeAnchor: modelAnchor);
 
       if (nodeId != null) {
         // track final node in state (so removeAllModels can delete it)
@@ -127,8 +164,12 @@ class ARService {
 
         // remove reticle (we want it invisible until next tap)
         await objectManager.removeNode(_reticleNode!);
+        await anchorManager.removeAnchor(_reticleAnchor!); // ← Supprimer aussi l'ancien anchor
         _reticleNode = null;
+        _reticleAnchor = null;
         state.setReticleVisible(false);
+
+        // Optionally provide haptic feedback
       }
     } catch (e) {
       // log but don't crash
