@@ -8,7 +8,7 @@ import 'package:ar_flutter_plugin_2/datatypes/hittest_result_types.dart';
 import 'package:ar_flutter_plugin_2/datatypes/node_types.dart';
 import 'package:vector_math/vector_math_64.dart' as vector;
 import 'package:flutter/foundation.dart';
-
+import 'dart:math' as math; 
 
 import '../models/ar_state.dart';
 
@@ -64,10 +64,19 @@ class ARService {
       orElse: () => hits.first,
     );
 
-    // if (planeHit == null) return;  //jamais null alors ne sert a rien
-
-    // Create anchor for reticle at hit transform
-    final anchor = ARPlaneAnchor(transformation: planeHit.worldTransform);
+    // ✨ MODIFIER LA TRANSFORMATION DE L'ANCHOR
+    var anchorTransformation = planeHit.worldTransform;
+    
+    // Créer une matrice de rotation
+    final rotationMatrix = vector.Matrix4.identity();
+    final rotationAxis = vector.Vector3(1.0, 0.0, 0.0); // Axe X
+    rotationMatrix.rotate(rotationAxis, -math.pi / 2); // -90°
+    
+    // Combiner la transformation du hit avec la rotation
+    anchorTransformation = anchorTransformation * rotationMatrix;
+    
+    // Create anchor avec la transformation modifiée
+    final anchor = ARPlaneAnchor(transformation: anchorTransformation);
 
     // Remove previous reticle anchor+node if exists
     await _removeReticleSilent();
@@ -78,13 +87,11 @@ class ARService {
       return;
     }
 
-    // create reticle node attached to the anchor
+    // create reticle node attached to the anchor (pas de rotation ici)
     final reticleNode = ARNode(
       type: NodeType.localGLTF2,
       uri: reticlePath,
-      // tweak scale/rotation if needed
       scale: vector.Vector3(0.15, 0.15, 0.15),
-      // You can also set eulerAngles/rotation if reticle needs rotation
     );
 
     final nodeId = await objectManager.addNode(reticleNode, planeAnchor: anchor);
@@ -93,7 +100,6 @@ class ARService {
       // save references
       _reticleNode = reticleNode;
       _reticleAnchor = anchor;
-      //_reticleAnchorId = "reticle_anchor";      //ne sert a rien vu la mise en comme au dessus 
 
       // expose to UI via state
       state.setReticleVisible(true);
