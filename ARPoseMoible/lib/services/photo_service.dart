@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
@@ -28,7 +27,7 @@ class PhotoService {
 
       if (bytes == null) throw Exception('Capture failed');
 
-      // 🔊 VIBRATION lors de la capture
+      // VIBRATION lors de la capture
       HapticFeedback.mediumImpact();
 
       // 4. Sauvegarder
@@ -40,7 +39,7 @@ class PhotoService {
 
       await Gal.putImage(imagePath);
 
-      // ✅ NOTIFICATION de succès
+      //NOTIFICATION de succès
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -61,7 +60,7 @@ class PhotoService {
 
     } catch (e) {
       state.setCapturing(false);
-      // ❌ Notification d'erreur
+      //Notification d'erreur
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
