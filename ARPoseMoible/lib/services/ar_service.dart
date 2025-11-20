@@ -119,14 +119,35 @@ class ARService {
     }
 
     try {
+      // ✨ CRÉER UN NOUVEL ANCHOR SANS ROTATION pour le modèle final
+      // Récupérer la transformation du reticle anchor
+      var modelTransformation = _reticleAnchor!.transformation;
+      
+      // Annuler la rotation en appliquant la rotation inverse
+      final inverseRotationMatrix = vector.Matrix4.identity();
+      final rotationAxis = vector.Vector3(1.0, 0.0, 0.0);
+      inverseRotationMatrix.rotate(rotationAxis, math.pi / 2); // +90° (inverse de -90°)
+      
+      // Appliquer la rotation inverse
+      modelTransformation = modelTransformation * inverseRotationMatrix;
+      
+      // Créer un nouvel anchor pour le modèle final (sans rotation)
+      final modelAnchor = ARPlaneAnchor(transformation: modelTransformation);
+      final modelAnchorId = await anchorManager.addAnchor(modelAnchor);
+      
+      if (modelAnchorId == null) {
+        debugPrint('Failed to add model anchor');
+        return;
+      }
+
       final node = ARNode(
         type: NodeType.localGLTF2,
         uri: modelPath,
-        scale: vector.Vector3(0.4, 0.4, 0.4),
+        scale: vector.Vector3(1.0, 1.0, 1.0),
       );
 
-      // attach final model to the SAME anchor used by the reticle
-      final nodeId = await objectManager.addNode(node, planeAnchor: _reticleAnchor);
+      // attach final model au NOUVEL anchor (sans rotation)
+      final nodeId = await objectManager.addNode(node, planeAnchor: modelAnchor);
 
       if (nodeId != null) {
         // track final node in state (so removeAllModels can delete it)
@@ -134,10 +155,10 @@ class ARService {
 
         // remove reticle (we want it invisible until next tap)
         await objectManager.removeNode(_reticleNode!);
+        await anchorManager.removeAnchor(_reticleAnchor!); // ← Supprimer aussi l'ancien anchor
         _reticleNode = null;
+        _reticleAnchor = null;
         state.setReticleVisible(false);
-
-        // Optionally provide haptic feedback
       }
     } catch (e) {
       // log but don't crash
