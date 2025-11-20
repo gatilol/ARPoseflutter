@@ -53,7 +53,7 @@ class _ArScreenState extends State<ArScreen> {
                   onClose: () => Navigator.pop(context),
                   onTakePhoto: () async {
                     try {
-                      await photoService.takeAndSavePhoto(screenshotController);
+                      await photoService.takeAndSavePhoto(screenshotController,context);
                     } catch (e) {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red));

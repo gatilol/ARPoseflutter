@@ -1,10 +1,11 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:gal/gal.dart';
 import 'package:screenshot/screenshot.dart';
+import 'package:flutter/services.dart';
 import '../models/ar_state.dart';
 
 class PhotoService {
@@ -12,7 +13,7 @@ class PhotoService {
 
   PhotoService({required this.state});
 
-  Future<void> takeAndSavePhoto(ScreenshotController controller) async {
+  Future<void> takeAndSavePhoto(ScreenshotController controller,BuildContext context) async {
     try {
       // 1. Masquer overlays
       state.setCapturing(true);
@@ -27,6 +28,9 @@ class PhotoService {
 
       if (bytes == null) throw Exception('Capture failed');
 
+      // 🔊 VIBRATION lors de la capture
+      HapticFeedback.mediumImpact();
+
       // 4. Sauvegarder
       final directory = await getTemporaryDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -35,8 +39,47 @@ class PhotoService {
       await file.writeAsBytes(bytes);
 
       await Gal.putImage(imagePath);
+
+      // ✅ NOTIFICATION de succès
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text('Photo saved to gallery'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+
+
     } catch (e) {
       state.setCapturing(false);
+      // ❌ Notification d'erreur
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error, color: Colors.white),
+                SizedBox(width: 12),
+                Text('Error while saving'),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+
+
       rethrow;
     }
   }
