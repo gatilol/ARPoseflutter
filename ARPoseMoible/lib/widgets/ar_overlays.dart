@@ -27,7 +27,7 @@ class AROverlays extends StatelessWidget {
         // top gradient
         Positioned(top: 0, left: 0, right: 0, child: Container(height: 120, decoration: BoxDecoration(
             gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [
-              Colors.black.withOpacity(0.6), Colors.transparent
+              Colors.black.withValues(), Colors.transparent
             ])
         ))),
         // close button
@@ -39,7 +39,7 @@ class AROverlays extends StatelessWidget {
             child: InkWell(
               onTap: onClose,
               borderRadius: BorderRadius.circular(25),
-              child: Container(width:50,height:50,decoration: BoxDecoration(color: Colors.black.withOpacity(0.5),shape: BoxShape.circle),child: const Icon(Icons.close, color: Colors.white)),
+              child: Container(width:50,height:50,decoration: BoxDecoration(color: Colors.black.withValues(),shape: BoxShape.circle),child: const Icon(Icons.close, color: Colors.white)),
             ),
           ),
         ),
@@ -50,12 +50,12 @@ class AROverlays extends StatelessWidget {
             left: 0, right: 0, child: Center(child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             margin: const EdgeInsets.symmetric(horizontal: 32),
-            decoration: BoxDecoration(color: Colors.black.withOpacity(0.7), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.3)),),
+            decoration: BoxDecoration(color: Colors.black.withValues(), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withValues()),),
             child: const Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.touch_app, color: Colors.white, size: 32), SizedBox(height:8), Text('Touchez une surface pour\nplacer le modèle 3D', textAlign: TextAlign.center, style: TextStyle(color: Colors.white,fontSize:14,fontWeight: FontWeight.bold))]),
           )),
           ),
         // bottom gradient
-        Positioned(bottom: 0,left:0,right:0,child: Container(height:180,decoration:BoxDecoration(gradient: LinearGradient(begin:Alignment.bottomCenter,end:Alignment.topCenter,colors:[Colors.black.withOpacity(0.7),Colors.transparent])))),
+        Positioned(bottom: 0,left:0,right:0,child: Container(height:180,decoration:BoxDecoration(gradient: LinearGradient(begin:Alignment.bottomCenter,end:Alignment.topCenter,colors:[Colors.black.withValues(),Colors.transparent])))),
         // photo button
         Positioned(bottom: 50,left:0,right:0,child: Center(child: CircleButton(icon: Icons.camera_alt, onPressed: onTakePhoto, size:80, isPrimary: true))),
         // delete button

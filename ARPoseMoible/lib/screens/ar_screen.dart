@@ -5,12 +5,7 @@ import '../models/ar_state.dart';
 import '../services/ar_service.dart';
 import '../services/photo_service.dart';
 import '../widgets/ar_overlays.dart';
-import '../widgets/circle_button.dart';
 import 'package:ar_flutter_plugin_2/widgets/ar_view.dart';
-import 'package:ar_flutter_plugin_2/managers/ar_location_manager.dart';
-import 'package:ar_flutter_plugin_2/managers/ar_anchor_manager.dart';
-import 'package:ar_flutter_plugin_2/managers/ar_object_manager.dart';
-import 'package:ar_flutter_plugin_2/managers/ar_session_manager.dart';
 import 'package:ar_flutter_plugin_2/datatypes/config_planedetection.dart';
 
 class ArScreen extends StatefulWidget {

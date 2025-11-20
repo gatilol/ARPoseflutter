@@ -27,7 +27,7 @@ class CircleButton extends StatelessWidget {
           width: size,
           height: size,
           decoration: BoxDecoration(
-            color: isPrimary ? Colors.white : (color ?? Colors.white).withOpacity(0.9),
+            color: isPrimary ? Colors.white : (color ?? Colors.white).withValues(),
             shape: BoxShape.circle,
             border: Border.all(
               color: isPrimary ? Colors.blue : (color ?? Colors.white),
@@ -35,7 +35,7 @@ class CircleButton extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black.withValues(),
                 blurRadius: 10,
                 spreadRadius: 2,
               ),

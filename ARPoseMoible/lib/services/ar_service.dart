@@ -24,7 +24,7 @@ class ARService {
   // internal tracking
   ARNode? _reticleNode;
   ARPlaneAnchor? _reticleAnchor;
-  String? _reticleAnchorId;
+  // String? _reticleAnchorId; //mis en com car par utiliser pour l'instant
 
   ARService({
     required this.state,
@@ -64,7 +64,7 @@ class ARService {
       orElse: () => hits.first,
     );
 
-    if (planeHit == null) return;
+    // if (planeHit == null) return;  //jamais null alors ne sert a rien
 
     // Create anchor for reticle at hit transform
     final anchor = ARPlaneAnchor(transformation: planeHit.worldTransform);
@@ -93,7 +93,7 @@ class ARService {
       // save references
       _reticleNode = reticleNode;
       _reticleAnchor = anchor;
-      _reticleAnchorId = "reticle_anchor";
+      //_reticleAnchorId = "reticle_anchor";      //ne sert a rien vu la mise en comme au dessus 
 
       // expose to UI via state
       state.setReticleVisible(true);
