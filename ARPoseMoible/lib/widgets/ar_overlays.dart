@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import '../models/ar_state.dart';
 import 'circle_button.dart';
 
@@ -8,7 +9,8 @@ class AROverlays extends StatelessWidget {
   final VoidCallback onTakePhoto;
   final VoidCallback onDelete;
   final VoidCallback onPlaceModel;
-  final VoidCallback onOpenModelMenu;
+  final VoidCallback onOpenModelMenu; //
+  final Future<void> Function(double) onRotateReticle;
 
   const AROverlays({
     required this.state,
@@ -16,7 +18,8 @@ class AROverlays extends StatelessWidget {
     required this.onTakePhoto,
     required this.onDelete,
     required this.onPlaceModel,
-    required this.onOpenModelMenu,
+    required this.onOpenModelMenu, //
+    required this.onRotateReticle,
     super.key,
   });
 
@@ -68,7 +71,7 @@ class AROverlays extends StatelessWidget {
           ),
         ),
 
-        // Bouton pour ouvrir le menu des modèles
+        // : Bouton pour ouvrir le menu des modèles
         Positioned(
           top: MediaQuery.of(context).padding.top + 16,
           right: 16,
@@ -96,6 +99,36 @@ class AROverlays extends StatelessWidget {
             ),
           ),
         ),
+
+        // Boutons de rotation
+        if (state.reticleVisible) ...[
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 90,
+            left: 20,
+            child: FloatingActionButton(
+              heroTag: 'rotateLeft',
+              mini: true,
+              onPressed: () async {
+                await onRotateReticle(-math.pi / 8);
+              },
+              backgroundColor: Colors.orange,
+              child: Icon(Icons.rotate_left),
+            ),
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 90,
+            right: 20,
+            child: FloatingActionButton(
+              heroTag: 'rotateRight',
+              mini: true,
+              onPressed: () async {
+                await onRotateReticle(math.pi / 8);
+              },
+              backgroundColor: Colors.orange,
+              child: Icon(Icons.rotate_right),
+            ),
+          ),
+        ],
 
         // instructions
         if (!state.hasPlacedModel)

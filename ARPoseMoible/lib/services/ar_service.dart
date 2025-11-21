@@ -8,7 +8,7 @@ import 'package:ar_flutter_plugin_2/datatypes/hittest_result_types.dart';
 import 'package:ar_flutter_plugin_2/datatypes/node_types.dart';
 import 'package:vector_math/vector_math_64.dart' as vector;
 import 'package:flutter/foundation.dart';
-import 'dart:math' as math;
+import 'dart:math' as math; 
 
 import '../models/ar_state.dart';
 
@@ -18,13 +18,14 @@ class ARService {
   late ARAnchorManager anchorManager;
 
   final ARState state;
-  String modelPath;          // NON final pour pouvoir le changer
+  String modelPath; // ← NON final pour pouvoir changer (ajout collègue)
   final String reticlePath;
 
   // internal tracking
   ARNode? _reticleNode;
   ARPlaneAnchor? _reticleAnchor;
-  // String? _reticleAnchorId; //mis en com car par utiliser pour l'instant
+  double _currentReticleRotationY = 0.0;
+  vector.Matrix4? _lastHitTransform;
 
   ARService({
     required this.state,
@@ -32,13 +33,12 @@ class ARService {
     required this.reticlePath,
   });
 
-  // Met à jour le chemin du modèle
+  // : Met à jour le chemin du modèle
   void updateModelPath(String newModelPath) {
     modelPath = newModelPath;
     debugPrint('Model path updated to: $newModelPath');
   }
 
-  // à brancher sur onARViewCreated
   void onARViewCreated(
       ARSessionManager session,
       ARObjectManager object,
@@ -56,94 +56,90 @@ class ARService {
       handleRotation: false,
     );
 
-    // IMPORTANT : onPlaneOrPointTap est appelé sur chaque tap
     sessionManager.onPlaneOrPointTap = (hits) => onPlaneOrPointTapped(hits);
   }
 
-  // Quand l'utilisateur tap l'écran : on déplace le reticle (ne place pas le modèle)
   Future<void> onPlaneOrPointTapped(List<ARHitTestResult> hits) async {
     if (hits.isEmpty) return;
 
-    // Choisir un hit (priorité aux planes)
     final ARHitTestResult planeHit = hits.firstWhere(
           (h) => h.type == ARHitTestResultType.plane,
       orElse: () => hits.first,
     );
 
-    // ✨ MODIFIER LA TRANSFORMATION DE L'ANCHOR
-    var anchorTransformation = planeHit.worldTransform;
+    _lastHitTransform = planeHit.worldTransform;
+    _currentReticleRotationY = 0.0;
+    
+    await _updateReticleWithRotation();
+  }
 
-    // Créer une matrice de rotation
-    final rotationMatrix = vector.Matrix4.identity();
-    final rotationAxis = vector.Vector3(1.0, 0.0, 0.0); // Axe X
-    rotationMatrix.rotate(rotationAxis, -math.pi / 2); // -90°
+  Future<void> _updateReticleWithRotation() async {
+    if (_lastHitTransform == null) return;
 
-    // Combiner la transformation du hit avec la rotation
-    anchorTransformation = anchorTransformation * rotationMatrix;
-
-    // Create anchor avec la transformation modifiée
-    final anchor = ARPlaneAnchor(transformation: anchorTransformation);
-
-    // Remove previous reticle anchor+node if exists
     await _removeReticleSilent();
 
-    final anchorId = await anchorManager.addAnchor(anchor);
-    if (anchorId == null) {
-      // can't add anchor
-      return;
-    }
+    var anchorTransformation = _lastHitTransform!;
+    
+    final rotationMatrixX = vector.Matrix4.identity();
+    final rotationAxisX = vector.Vector3(1.0, 0.0, 0.0);
+    rotationMatrixX.rotate(rotationAxisX, -math.pi / 2);
+    
+    final rotationMatrixY = vector.Matrix4.identity();
+    final rotationAxisY = vector.Vector3(0.0, 1.0, 0.0);
+    rotationMatrixY.rotate(rotationAxisY, _currentReticleRotationY);
+    
+    anchorTransformation = anchorTransformation * rotationMatrixX * rotationMatrixY;
+    
+    final anchor = ARPlaneAnchor(transformation: anchorTransformation);
 
-    // create reticle node attached to the anchor (pas de rotation ici)
+    final anchorId = await anchorManager.addAnchor(anchor);
+    if (anchorId == null) return;
+
     final reticleNode = ARNode(
       type: NodeType.localGLTF2,
       uri: reticlePath,
-      // tweak scale/rotation if needed
       scale: vector.Vector3(0.15, 0.15, 0.15),
-      // You can also set eulerAngles/rotation if reticle needs rotation
     );
 
     final nodeId = await objectManager.addNode(reticleNode, planeAnchor: anchor);
 
     if (nodeId != null) {
-      // save references
       _reticleNode = reticleNode;
       _reticleAnchor = anchor;
-      //_reticleAnchorId = "reticle_anchor";      //ne sert a rien vu la mise en comme au dessus 
-
-      // expose to UI via state
       state.setReticleVisible(true);
     } else {
-      // fallback: remove anchor if node failed
       try {
         await anchorManager.removeAnchor(anchor);
       } catch (_) {}
     }
   }
 
-  // Place the final model at reticle's anchor. Removes the reticle.
+  Future<void> rotateReticle(double angleRadians) async {
+    if (_reticleNode == null || _lastHitTransform == null) return;
+    
+    _currentReticleRotationY += angleRadians;
+    
+    // Normaliser entre 0 et 2π
+    _currentReticleRotationY = ((_currentReticleRotationY % (2 * math.pi)) + 2 * math.pi) % (2 * math.pi);
+    
+    await _updateReticleWithRotation();
+  }
+
   Future<void> placeModelAtReticle() async {
-    if (_reticleAnchor == null) {
-      // nothing to place
-      return;
-    }
+    if (_reticleAnchor == null || _lastHitTransform == null) return;
 
     try {
-      // ✨ CRÉER UN NOUVEL ANCHOR SANS ROTATION pour le modèle final
-      // Récupérer la transformation du reticle anchor
-      var modelTransformation = _reticleAnchor!.transformation;
-
-      // Annuler la rotation en appliquant la rotation inverse
-      final inverseRotationMatrix = vector.Matrix4.identity();
-      final rotationAxis = vector.Vector3(1.0, 0.0, 0.0);
-      inverseRotationMatrix.rotate(rotationAxis, math.pi / 2); // +90° (inverse de -90°)
-
-      // Appliquer la rotation inverse
-      modelTransformation = modelTransformation * inverseRotationMatrix;
-
-      // Créer un nouvel anchor pour le modèle final (sans rotation)
+      var modelTransformation = _lastHitTransform!;
+      
+      final rotationMatrixY = vector.Matrix4.identity();
+      final rotationAxisY = vector.Vector3(0.0, 1.0, 0.0);
+      rotationMatrixY.rotate(rotationAxisY, _currentReticleRotationY);
+      
+      modelTransformation = modelTransformation * rotationMatrixY;
+      
       final modelAnchor = ARPlaneAnchor(transformation: modelTransformation);
       final modelAnchorId = await anchorManager.addAnchor(modelAnchor);
-
+      
       if (modelAnchorId == null) {
         debugPrint('Failed to add model anchor');
         return;
@@ -152,34 +148,28 @@ class ARService {
       final node = ARNode(
         type: NodeType.localGLTF2,
         uri: modelPath,
-        scale: vector.Vector3(1.0, 1.0, 1.0),
+        scale: vector.Vector3(0.4, 0.4, 0.4),
       );
 
-      // attach final model au NOUVEL anchor (sans rotation)
       final nodeId = await objectManager.addNode(node, planeAnchor: modelAnchor);
 
       if (nodeId != null) {
-        // track final node in state (so removeAllModels can delete it)
         state.addNode(node);
 
-        // remove reticle (we want it invisible until next tap)
         await objectManager.removeNode(_reticleNode!);
-        await anchorManager.removeAnchor(_reticleAnchor!); // ← Supprimer aussi l'ancien anchor
+        await anchorManager.removeAnchor(_reticleAnchor!);
         _reticleNode = null;
         _reticleAnchor = null;
+        _lastHitTransform = null;
+        _currentReticleRotationY = 0.0;
         state.setReticleVisible(false);
-
-        // Optionally provide haptic feedback
       }
     } catch (e) {
-      // log but don't crash
       debugPrint('Error placing model: $e');
     }
   }
 
-  // internal helper: remove reticle anchor+node without modifying state too much
   Future<void> _removeReticleSilent() async {
-    // remove node first
     if (_reticleNode != null) {
       try {
         await objectManager.removeNode(_reticleNode!);
@@ -187,14 +177,16 @@ class ARService {
       _reticleNode = null;
     }
 
-    // then remove anchor
-    _reticleNode = null;
+    if (_reticleAnchor != null) {
+      try {
+        await anchorManager.removeAnchor(_reticleAnchor!);
+      } catch (_) {}
+      _reticleAnchor = null;
+    }
 
-    // update state
     state.setReticleVisible(false);
   }
 
-  // remove all final models (keeps reticle unaffected)
   Future<void> removeAllModels() async {
     if (state.nodes.isEmpty) return;
     for (var node in List.from(state.nodes)) {
@@ -207,7 +199,6 @@ class ARService {
 
   void dispose() {
     try {
-      // cleanup reticle
       _removeReticleSilent();
       sessionManager.dispose();
     } catch (_) {}

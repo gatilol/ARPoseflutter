@@ -5,7 +5,7 @@ import '../models/ar_state.dart';
 import '../services/ar_service.dart';
 import '../services/photo_service.dart';
 import '../widgets/ar_overlays.dart';
-import '../widgets/model_selector_menu.dart';
+import '../widgets/model_selector_menu.dart'; //
 import 'package:ar_flutter_plugin_2/widgets/ar_view.dart';
 import 'package:ar_flutter_plugin_2/datatypes/config_planedetection.dart';
 
@@ -22,7 +22,7 @@ class _ArScreenState extends State<ArScreen> {
   late final PhotoService photoService;
   final ScreenshotController screenshotController = ScreenshotController();
 
-  // État du menu et modèle sélectionné
+  // : État du menu et modèle sélectionné
   bool isModelMenuOpen = false;
   String currentModelPath = 'assets/models/eva_01_esg.glb';
   final String reticlePath = 'assets/models/reticle.glb';
@@ -39,19 +39,16 @@ class _ArScreenState extends State<ArScreen> {
     photoService = PhotoService(state: arState);
   }
 
-  // Méthode pour changer de modèle
+  // : Méthode pour changer de modèle
   void _onModelSelected(Model3D model) {
     setState(() {
       currentModelPath = model.path;
     });
 
-    // Mettre à jour le chemin du modèle dans le service AR existant
     arService.updateModelPath(currentModelPath);
 
-    // Feedback haptique
     HapticFeedback.lightImpact();
 
-    // Afficher un message
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -105,14 +102,17 @@ class _ArScreenState extends State<ArScreen> {
                     await arService.placeModelAtReticle();
                     HapticFeedback.mediumImpact();
                   },
-                  onOpenModelMenu: () {
+                  onOpenModelMenu: () { //
                     setState(() {
                       isModelMenuOpen = true;
                     });
                   },
+                  onRotateReticle: (angle) async {
+                    await arService.rotateReticle(angle);
+                  },
                 ),
 
-                // Menu de sélection des modèles
+                // : Menu de sélection des modèles
                 ModelSelectorMenu(
                   isOpen: isModelMenuOpen,
                   onClose: () {
