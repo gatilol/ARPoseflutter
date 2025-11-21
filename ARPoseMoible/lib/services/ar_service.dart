@@ -80,6 +80,8 @@ class ARService {
 
     var anchorTransformation = _lastHitTransform!;
 
+    print('🔄 Angle: ${(_currentReticleRotationY * 180 / math.pi).toStringAsFixed(1)}° (${_currentReticleRotationY.toStringAsFixed(3)} rad)');
+
     //rotation 90° 
     
     //final rotationMatrixX = vector.Matrix4.identity();
@@ -93,11 +95,20 @@ class ARService {
     //anchorTransformation = anchorTransformation * rotationMatrixX * rotationMatrixY;
 
     anchorTransformation = anchorTransformation * rotationMatrixY;
+
+
+
+      // 🔍 DEBUG: Vérifier la transformation finale
+      print('📍 Transformation: ${anchorTransformation.getTranslation()}');
+      print('📐 Rotation appliquée: ${_currentReticleRotationY}');
     
     final anchor = ARPlaneAnchor(transformation: anchorTransformation);
 
     final anchorId = await anchorManager.addAnchor(anchor);
-    if (anchorId == null) return;
+    if (anchorId == null) {
+      print('❌ Anchor failed!');
+      return;
+    }
 
     final reticleNode = ARNode(
       type: NodeType.localGLTF2,
@@ -111,7 +122,9 @@ class ARService {
       _reticleNode = reticleNode;
       _reticleAnchor = anchor;
       state.setReticleVisible(true);
+      print('✅ Reticle créé!');
     } else {
+      print('❌ Node failed!');
       try {
         await anchorManager.removeAnchor(anchor);
       } catch (_) {}
@@ -125,7 +138,8 @@ class ARService {
     
     // Normaliser entre 0 et 2π
     _currentReticleRotationY = ((_currentReticleRotationY % (2 * math.pi)) + 2 * math.pi) % (2 * math.pi);
-     print('✅✅✅ $_currentReticleRotationY');
+    final printanglerota = _currentReticleRotationY * 180 / math.pi;
+    print('✅✅✅  $printanglerota');
     
     await _updateReticleWithRotation();
   }
@@ -135,13 +149,20 @@ class ARService {
 
     try {
       var modelTransformation = _lastHitTransform!;
+
+      // 🔍 DEBUG: Vérifier que _lastHitTransform n'a pas changé
+      print('📍 Position hit: ${_lastHitTransform!.getTranslation()}');
       
       final rotationMatrixY = vector.Matrix4.identity();
       final rotationAxisY = vector.Vector3(0.0, 1.0, 0.0);
-      print('✅✅✅✅✅✅✅✅✅✅ $_currentReticleRotationY');
+      final printanglerota = _currentReticleRotationY * 180 / math.pi;
+      print('✅✅✅✅✅✅✅✅✅✅ $printanglerota');
       rotationMatrixY.rotate(rotationAxisY, _currentReticleRotationY);
       
       modelTransformation = modelTransformation * rotationMatrixY;
+
+      // 🔍 DEBUG: Vérifier la transformation finale
+      print('🎯 Transformation finale: ${modelTransformation.storage}');
       
       final modelAnchor = ARPlaneAnchor(transformation: modelTransformation);
       final modelAnchorId = await anchorManager.addAnchor(modelAnchor);
