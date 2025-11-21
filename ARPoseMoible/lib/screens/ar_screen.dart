@@ -25,7 +25,7 @@ class _ArScreenState extends State<ArScreen> {
   // État du menu et modèle sélectionné
   bool isModelMenuOpen = false;
   String currentModelPath = 'assets/models/eva_01_esg.glb';
-  final String reticlePath = 'assets/models/reticle.glb';
+  final String reticlePath = 'assets/models/test_reticle.glb';
 
   @override
   void initState() {
