@@ -26,6 +26,11 @@ class ModelSelectorMenu extends StatelessWidget {
       icon: Icons.android,
     ),
     Model3D(
+      name: 'EVA-02',
+      path: 'assets/models/evangelion_unit-02.glb',
+      icon: Icons.android,
+    ),
+    Model3D(
       name: 'Human',
       path: 'assets/models/human_body_base_cartoon.glb',
       icon: Icons.view_in_ar,
