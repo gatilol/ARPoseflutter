@@ -79,16 +79,20 @@ class ARService {
     await _removeReticleSilent();
 
     var anchorTransformation = _lastHitTransform!;
+
+    //rotation 90° 
     
-    final rotationMatrixX = vector.Matrix4.identity();
-    final rotationAxisX = vector.Vector3(1.0, 0.0, 0.0);
-    rotationMatrixX.rotate(rotationAxisX, -math.pi / 2);
+    //final rotationMatrixX = vector.Matrix4.identity();
+    //final rotationAxisX = vector.Vector3(1.0, 0.0, 0.0);
+    //rotationMatrixX.rotate(rotationAxisX, -math.pi / 2);
     
     final rotationMatrixY = vector.Matrix4.identity();
     final rotationAxisY = vector.Vector3(0.0, 1.0, 0.0);
     rotationMatrixY.rotate(rotationAxisY, _currentReticleRotationY);
     
-    anchorTransformation = anchorTransformation * rotationMatrixX * rotationMatrixY;
+    //anchorTransformation = anchorTransformation * rotationMatrixX * rotationMatrixY;
+
+    anchorTransformation = anchorTransformation * rotationMatrixY;
     
     final anchor = ARPlaneAnchor(transformation: anchorTransformation);
 
@@ -121,6 +125,7 @@ class ARService {
     
     // Normaliser entre 0 et 2π
     _currentReticleRotationY = ((_currentReticleRotationY % (2 * math.pi)) + 2 * math.pi) % (2 * math.pi);
+     print('✅✅✅ $_currentReticleRotationY');
     
     await _updateReticleWithRotation();
   }
@@ -133,6 +138,7 @@ class ARService {
       
       final rotationMatrixY = vector.Matrix4.identity();
       final rotationAxisY = vector.Vector3(0.0, 1.0, 0.0);
+      print('✅✅✅✅✅✅✅✅✅✅ $_currentReticleRotationY');
       rotationMatrixY.rotate(rotationAxisY, _currentReticleRotationY);
       
       modelTransformation = modelTransformation * rotationMatrixY;

@@ -5,7 +5,7 @@ import '../models/ar_state.dart';
 import '../services/ar_service.dart';
 import '../services/photo_service.dart';
 import '../widgets/ar_overlays.dart';
-import '../widgets/model_selector_menu.dart'; //
+import '../widgets/model_selector_menu.dart'; 
 import 'package:ar_flutter_plugin_2/widgets/ar_view.dart';
 import 'package:ar_flutter_plugin_2/datatypes/config_planedetection.dart';
 
