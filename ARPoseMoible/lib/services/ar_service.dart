@@ -18,13 +18,15 @@ class ARService {
   late ARAnchorManager anchorManager;
 
   final ARState state;
-  String modelPath; // ← NON final pour pouvoir changer (ajout collègue)
+  String modelPath;
   final String reticlePath;
 
   // internal tracking
   ARNode? _reticleNode;
   ARPlaneAnchor? _reticleAnchor;
-  double _currentReticleRotationY = 0.0;
+  
+  // ✅ QUATERNION au lieu d'un simple angle
+  vector.Quaternion _currentReticleRotation = vector.Quaternion.identity();
   vector.Matrix4? _lastHitTransform;
 
   ARService({
@@ -33,7 +35,6 @@ class ARService {
     required this.reticlePath,
   });
 
-  // : Met à jour le chemin du modèle
   void updateModelPath(String newModelPath) {
     modelPath = newModelPath;
     debugPrint('Model path updated to: $newModelPath');
@@ -68,7 +69,9 @@ class ARService {
     );
 
     _lastHitTransform = planeHit.worldTransform;
-    _currentReticleRotationY = 0.0;
+    
+    // ✅ Réinitialiser le quaternion
+    _currentReticleRotation = vector.Quaternion.identity();
     
     await _updateReticleWithRotation();
   }
@@ -80,27 +83,23 @@ class ARService {
 
     var anchorTransformation = _lastHitTransform!;
 
-    print('🔄 Angle: ${(_currentReticleRotationY * 180 / math.pi).toStringAsFixed(1)}° (${_currentReticleRotationY.toStringAsFixed(3)} rad)');
-
-    //rotation 90° 
+    // ✅ CHANGEMENT ICI : Matrix4 au lieu de Matrix3
+    final rotationMatrix = vector.Matrix4.identity();
+    rotationMatrix.setRotation(_currentReticleRotation.asRotationMatrix());
     
-    //final rotationMatrixX = vector.Matrix4.identity();
-    //final rotationAxisX = vector.Vector3(1.0, 0.0, 0.0);
-    //rotationMatrixX.rotate(rotationAxisX, -math.pi / 2);
-    
-    final rotationMatrixY = vector.Matrix4.identity();
-    final rotationAxisY = vector.Vector3(0.0, 1.0, 0.0);
-    rotationMatrixY.rotate(rotationAxisY, _currentReticleRotationY);
-    
-    //anchorTransformation = anchorTransformation * rotationMatrixX * rotationMatrixY;
+    // Debug : afficher l'angle
+    final angleRadians = _currentReticleRotation.radians;
+    final angleDegrees = angleRadians * 180 / math.pi;
+    print('🔄 Angle: ${angleDegrees.toStringAsFixed(1)}° (${angleRadians.toStringAsFixed(3)} rad)');
+    print('📐 Quaternion: x=${_currentReticleRotation.x.toStringAsFixed(3)}, '
+          'y=${_currentReticleRotation.y.toStringAsFixed(3)}, '
+          'z=${_currentReticleRotation.z.toStringAsFixed(3)}, '
+          'w=${_currentReticleRotation.w.toStringAsFixed(3)}');
 
-    anchorTransformation = anchorTransformation * rotationMatrixY;
+    // Appliquer la rotation
+    anchorTransformation = anchorTransformation * rotationMatrix;
 
-
-
-      // 🔍 DEBUG: Vérifier la transformation finale
-      print('📍 Transformation: ${anchorTransformation.getTranslation()}');
-      print('📐 Rotation appliquée: ${_currentReticleRotationY}');
+    print('📍 Transformation: ${anchorTransformation.getTranslation()}');
     
     final anchor = ARPlaneAnchor(transformation: anchorTransformation);
 
@@ -131,15 +130,34 @@ class ARService {
     }
   }
 
+  // ✅ ROTATION AVEC QUATERNIONS
   Future<void> rotateReticle(double angleRadians) async {
     if (_reticleNode == null || _lastHitTransform == null) return;
     
-    _currentReticleRotationY += angleRadians;
+    print('⚙️ AVANT rotation:');
+    print('   Quaternion: x=${_currentReticleRotation.x}, y=${_currentReticleRotation.y}, z=${_currentReticleRotation.z}, w=${_currentReticleRotation.w}');
     
-    // Normaliser entre 0 et 2π
-    _currentReticleRotationY = ((_currentReticleRotationY % (2 * math.pi)) + 2 * math.pi) % (2 * math.pi);
-    final printanglerota = _currentReticleRotationY * 180 / math.pi;
-    print('✅✅✅  $printanglerota');
+    // Créer un quaternion représentant la rotation incrémentale autour de l'axe Y
+    final rotationAxis = vector.Vector3(0.0, 1.0, 0.0);
+    final deltaRotation = vector.Quaternion.axisAngle(rotationAxis, angleRadians);
+    
+    print('   Delta rotation: x=${deltaRotation.x}, y=${deltaRotation.y}, z=${deltaRotation.z}, w=${deltaRotation.w}');
+    
+    // Multiplication de quaternions
+    _currentReticleRotation = _currentReticleRotation * deltaRotation;
+    
+    print('⚙️ APRÈS multiplication:');
+    print('   Quaternion: x=${_currentReticleRotation.x}, y=${_currentReticleRotation.y}, z=${_currentReticleRotation.z}, w=${_currentReticleRotation.w}');
+    
+    // Normaliser
+    _currentReticleRotation.normalize();
+    
+    print('⚙️ APRÈS normalisation:');
+    print('   Quaternion: x=${_currentReticleRotation.x}, y=${_currentReticleRotation.y}, z=${_currentReticleRotation.z}, w=${_currentReticleRotation.w}');
+    
+    // Debug
+    final totalAngle = _currentReticleRotation.radians * 180 / math.pi;
+    print('✅ Rotation totale: ${totalAngle.toStringAsFixed(1)}°');
     
     await _updateReticleWithRotation();
   }
@@ -150,18 +168,18 @@ class ARService {
     try {
       var modelTransformation = _lastHitTransform!;
 
-      // 🔍 DEBUG: Vérifier que _lastHitTransform n'a pas changé
       print('📍 Position hit: ${_lastHitTransform!.getTranslation()}');
       
-      final rotationMatrixY = vector.Matrix4.identity();
-      final rotationAxisY = vector.Vector3(0.0, 1.0, 0.0);
-      final printanglerota = _currentReticleRotationY * 180 / math.pi;
-      print('✅✅✅✅✅✅✅✅✅✅ $printanglerota');
-      rotationMatrixY.rotate(rotationAxisY, _currentReticleRotationY);
+      // ✅ CHANGEMENT ICI : Matrix4 au lieu de Matrix3
+      final rotationMatrix = vector.Matrix4.identity();
+      rotationMatrix.setRotation(_currentReticleRotation.asRotationMatrix());
       
-      modelTransformation = modelTransformation * rotationMatrixY;
+      final angleRadians = _currentReticleRotation.radians;
+      final angleDegrees = angleRadians * 180 / math.pi;
+      print('🎯 Placement avec rotation: ${angleDegrees.toStringAsFixed(1)}°');
+      
+      modelTransformation = modelTransformation * rotationMatrix;
 
-      // 🔍 DEBUG: Vérifier la transformation finale
       print('🎯 Transformation finale: ${modelTransformation.storage}');
       
       final modelAnchor = ARPlaneAnchor(transformation: modelTransformation);
@@ -175,7 +193,7 @@ class ARService {
       final node = ARNode(
         type: NodeType.localGLTF2,
         uri: modelPath,
-        scale: vector.Vector3(0.4, 0.4, 0.4),
+        scale: vector.Vector3(1.0, 1.0, 1.0),
       );
 
       final nodeId = await objectManager.addNode(node, planeAnchor: modelAnchor);
@@ -188,7 +206,7 @@ class ARService {
         _reticleNode = null;
         _reticleAnchor = null;
         _lastHitTransform = null;
-        _currentReticleRotationY = 0.0;
+        _currentReticleRotation = vector.Quaternion.identity();
         state.setReticleVisible(false);
       }
     } catch (e) {

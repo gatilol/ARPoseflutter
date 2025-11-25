@@ -641,95 +641,90 @@ class ArView(
         }
     }
 
+
+
     private fun handleTransformNode(
-    call: MethodCall,
-    result: MethodChannel.Result,
-) {
-    try {
-        if (handlePans || handleRotation) {
-            val name = call.argument<String>("name")
-            val newTransformation: ArrayList<Double>? = call.argument<ArrayList<Double>>("transformation")
-
-            if (name == null) {
-                result.error("INVALID_ARGUMENT", "Node name is required", null)
-                return
-            }
-            nodesMap[name]?.let { node ->
-                newTransformation?.let { transform ->
-                    if (transform.size != 16) {
-                        result.error("INVALID_TRANSFORMATION", "Transformation must be a 4x4 matrix (16 values)", null)
-                        return
-                    }
-
-                    node.apply {
-                        transform(
-                            position = ScenePosition(
-                                x = transform[12].toFloat(),
-                                y = transform[13].toFloat(),
-                                z = transform[14].toFloat()
-                            ),
-                            rotation = SceneRotation(
-                                x = kotlin.math.atan2(transform[6].toFloat(), transform[10].toFloat()),
-                                y = kotlin.math.atan2(-transform[2].toFloat(), 
-                                    kotlin.math.sqrt(transform[6].toFloat() * transform[6].toFloat() + 
-                                    transform[10].toFloat() * transform[10].toFloat())),
-                                z = kotlin.math.atan2(transform[1].toFloat(), transform[0].toFloat())
-                            ),
-                            scale = SceneScale(
-                                x = kotlin.math.sqrt((transform[0] * transform[0] + transform[1] * transform[1] + transform[2] * transform[2]).toFloat()),
-                                y = kotlin.math.sqrt((transform[4] * transform[4] + transform[5] * transform[5] + transform[6] * transform[6]).toFloat()),
-                                z = kotlin.math.sqrt((transform[8] * transform[8] + transform[9] * transform[9] + transform[10] * transform[10]).toFloat())
-                            )
-                        )
-                    }
-                    result.success(null)
-                } ?: result.error("INVALID_TRANSFORMATION", "Transformation is required", null)
-            } ?: result.error("NODE_NOT_FOUND", "Node with name $name not found", null)
-        }
-    } catch (e: Exception) {
-        result.error("TRANSFORM_NODE_ERROR", e.message, null)
-    }
-}
-
-    private fun handleHostCloudAnchor(
         call: MethodCall,
         result: MethodChannel.Result,
     ) {
         try {
-            val anchorId = call.argument<String>("anchorId")
-            if (anchorId == null) {
-                result.error("INVALID_ARGUMENT", "Anchor ID is required", null)
-                return
-            }
+            if (handlePans || handleRotation) {
+                val name = call.argument<String>("name")
+                val newTransformation: ArrayList<Double>? = call.argument<ArrayList<Double>>("transformation")
 
-            val session = sceneView.session
-            if (session == null) {
-                result.error("SESSION_ERROR", "AR Session is not available", null)
-                return
-            }
-
-            if (!session.canHostCloudAnchor(sceneView.cameraNode)) {
-                result.error("HOSTING_ERROR", "Insufficient visual data to host", null)
-                return
-            }
-
-            val anchor = session.allAnchors.find { it.cloudAnchorId == anchorId }
-            if (anchor == null) {
-                result.error("ANCHOR_NOT_FOUND", "Anchor with ID $anchorId not found", null)
-                return
-            }
-
-            val cloudAnchorNode = CloudAnchorNode(sceneView.engine, anchor)
-            cloudAnchorNode.host(session) { cloudAnchorId, state ->
-                if (state == CloudAnchorState.SUCCESS && cloudAnchorId != null) {
-                    result.success(cloudAnchorId)
-                } else {
-                    result.error("HOSTING_ERROR", "Failed to host cloud anchor: $state", null)
+                if (name == null) {
+                    result.error("INVALID_ARGUMENT", "Node name is required", null)
+                    return
                 }
+                
+                nodesMap[name]?.let { node ->
+                    newTransformation?.let { transform ->
+                        if (transform.size != 16) {
+                            result.error("INVALID_TRANSFORMATION", "Transformation must be a 4x4 matrix (16 values)", null)
+                            return
+                        }
+
+                        // ✅ 1. Extraire la position (dernière colonne)
+                        val position = ScenePosition(
+                            x = transform[12].toFloat(),
+                            y = transform[13].toFloat(),
+                            z = transform[14].toFloat()
+                        )
+
+                        // ✅ 2. Calculer le scale
+                        val scaleX = kotlin.math.sqrt(
+                            (transform[0] * transform[0] + 
+                            transform[1] * transform[1] + 
+                            transform[2] * transform[2]).toFloat()
+                        )
+                        val scaleY = kotlin.math.sqrt(
+                            (transform[4] * transform[4] + 
+                            transform[5] * transform[5] + 
+                            transform[6] * transform[6]).toFloat()
+                        )
+                        val scaleZ = kotlin.math.sqrt(
+                            (transform[8] * transform[8] + 
+                            transform[9] * transform[9] + 
+                            transform[10] * transform[10]).toFloat()
+                        )
+
+                        // ✅ 3. Normaliser la matrice de rotation en divisant par le scale
+                        val m00 = transform[0].toFloat() / scaleX
+                        val m01 = transform[1].toFloat() / scaleX
+                        val m02 = transform[2].toFloat() / scaleX
+                        val m10 = transform[4].toFloat() / scaleY
+                        val m11 = transform[5].toFloat() / scaleY
+                        val m12 = transform[6].toFloat() / scaleY
+                        val m20 = transform[8].toFloat() / scaleZ
+                        val m21 = transform[9].toFloat() / scaleZ
+                        val m22 = transform[10].toFloat() / scaleZ
+
+                        // ✅ 4. Extraire les angles d'Euler à partir de la matrice normalisée
+                        val rotation = SceneRotation(
+                            x = kotlin.math.atan2(m21, m22),
+                            y = kotlin.math.atan2(-m02, kotlin.math.sqrt(m12 * m12 + m22 * m22)),
+                            z = kotlin.math.atan2(m10, m00)
+                        )
+
+                        val scale = SceneScale(
+                            x = scaleX,
+                            y = scaleY,
+                            z = scaleZ
+                        )
+
+                        // ✅ 5. Appliquer la transformation
+                        node.transform(
+                            position = position,
+                            rotation = rotation,
+                            scale = scale
+                        )
+                        
+                        result.success(null)
+                    } ?: result.error("INVALID_TRANSFORMATION", "Transformation is required", null)
+                } ?: result.error("NODE_NOT_FOUND", "Node with name $name not found", null)
             }
-            sceneView.addChildNode(cloudAnchorNode)
         } catch (e: Exception) {
-            result.error("HOST_CLOUD_ANCHOR_ERROR", e.message, null)
+            result.error("TRANSFORM_NODE_ERROR", e.message, null)
         }
     }
 
@@ -927,28 +922,66 @@ class ArView(
 
                 if (name != null && transform != null) {
                     try {
-                        // Décomposer la matrice de transformation
-                        val (position, rotation) = deserializeMatrix4(transform)
+                        // ✅ Extraire position
+                        val position = Position(
+                            x = transform[12].toFloat(),
+                            y = transform[13].toFloat(),
+                            z = transform[14].toFloat()
+                        )
+                        
+                        // ✅ Extraire le quaternion directement de la matrice
+                        val m = FloatArray(16) { i -> transform[i].toFloat() }
+                        
+                        // Calculer le scale
+                        val scaleX = kotlin.math.sqrt(m[0]*m[0] + m[1]*m[1] + m[2]*m[2])
+                        val scaleY = kotlin.math.sqrt(m[4]*m[4] + m[5]*m[5] + m[6]*m[6])
+                        val scaleZ = kotlin.math.sqrt(m[8]*m[8] + m[9]*m[9] + m[10]*m[10])
+                        
+                        // Normaliser la matrice de rotation
+                        val r = FloatArray(9)
+                        r[0] = m[0] / scaleX; r[1] = m[1] / scaleX; r[2] = m[2] / scaleX
+                        r[3] = m[4] / scaleY; r[4] = m[5] / scaleY; r[5] = m[6] / scaleY
+                        r[6] = m[8] / scaleZ; r[7] = m[9] / scaleZ; r[8] = m[10] / scaleZ
+                        
+                        // ✅ Convertir matrice 3x3 en quaternion
+                        val trace = r[0] + r[4] + r[8]
+                        val quat = FloatArray(4)
+                        
+                        if (trace > 0) {
+                            val s = 0.5f / kotlin.math.sqrt(trace + 1.0f)
+                            quat[3] = 0.25f / s  // w
+                            quat[0] = (r[7] - r[5]) * s  // x
+                            quat[1] = (r[2] - r[6]) * s  // y
+                            quat[2] = (r[3] - r[1]) * s  // z
+                        } else if (r[0] > r[4] && r[0] > r[8]) {
+                            val s = 2.0f * kotlin.math.sqrt(1.0f + r[0] - r[4] - r[8])
+                            quat[3] = (r[7] - r[5]) / s  // w
+                            quat[0] = 0.25f * s  // x
+                            quat[1] = (r[1] + r[3]) / s  // y
+                            quat[2] = (r[2] + r[6]) / s  // z
+                        } else if (r[4] > r[8]) {
+                            val s = 2.0f * kotlin.math.sqrt(1.0f + r[4] - r[0] - r[8])
+                            quat[3] = (r[2] - r[6]) / s  // w
+                            quat[0] = (r[1] + r[3]) / s  // x
+                            quat[1] = 0.25f * s  // y
+                            quat[2] = (r[5] + r[7]) / s  // z
+                        } else {
+                            val s = 2.0f * kotlin.math.sqrt(1.0f + r[8] - r[0] - r[4])
+                            quat[3] = (r[3] - r[1]) / s  // w
+                            quat[0] = (r[2] + r[6]) / s  // x
+                            quat[1] = (r[5] + r[7]) / s  // y
+                            quat[2] = 0.25f * s  // z
+                        }
 
-                        val pose =
-                            Pose(
-                                floatArrayOf(position.x, position.y, position.z),
-                                floatArrayOf(rotation.x, rotation.y, rotation.z, 1f),
-                            )
+                        // ✅ Créer le Pose avec le quaternion (x, y, z, w)
+                        val pose = Pose(
+                            floatArrayOf(position.x, position.y, position.z),
+                            floatArrayOf(quat[0], quat[1], quat[2], quat[3])
+                        )
 
                         val anchor = sceneView.session?.createAnchor(pose)
                         if (anchor != null) {
                             val anchorNode = AnchorNode(sceneView.engine, anchor)
-                            try {
-                                anchorNode.transform =
-                                    Transform(
-                                        position = position,
-                                        rotation = rotation,
-                                    )
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Transform warning suppressed: ${e.message}")
-                            }
-
                             sceneView.addChildNode(anchorNode)
                             anchorNodesMap[name] = anchorNode
                             result.success(true)
@@ -956,7 +989,7 @@ class ArView(
                             result.success(false)
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error in transform calculation: ${e.message}")
+                        Log.e(TAG, "Error in handleAddAnchor: ${e.message}")
                         result.success(false)
                     }
                 } else {
