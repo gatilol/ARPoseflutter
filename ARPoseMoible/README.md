@@ -2,9 +2,6 @@
 
 A new Flutter project.
 
-
-faire rotation avec quaternion 
-
 ## Getting Started
 
 This project is a starting point for a Flutter application.
