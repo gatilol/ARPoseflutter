@@ -9,34 +9,35 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.PixelCopy
-import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.lifecycle.Lifecycle
-import com.google.ar.core.Anchor.CloudAnchorState
+import com.google.ar.core.AugmentedFace
 import com.google.ar.core.Config
 import com.google.ar.core.Frame
 import com.google.ar.core.Plane
-import com.google.ar.core.Pose
 import com.google.ar.core.TrackingState
-import com.uhg0.ar_flutter_plugin_2.Serialization.deserializeMatrix4
+import com.google.ar.core.exceptions.SessionPausedException
 import com.uhg0.ar_flutter_plugin_2.Serialization.serializeHitResult
+import io.flutter.FlutterInjector
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.platform.PlatformView
 import io.github.sceneview.ar.ARSceneView
-import io.github.sceneview.ar.arcore.canHostCloudAnchor
 import io.github.sceneview.ar.arcore.fps
 import io.github.sceneview.ar.node.AnchorNode
-import io.github.sceneview.ar.node.CloudAnchorNode
 import io.github.sceneview.ar.node.HitResultNode
+import io.github.sceneview.ar.scene.PlaneRenderer
 import io.github.sceneview.gesture.MoveGestureDetector
 import io.github.sceneview.gesture.RotateGestureDetector
+import io.github.sceneview.loaders.MaterialLoader
 import io.github.sceneview.math.Position
-import io.github.sceneview.math.Transform
+import io.github.sceneview.math.Rotation
+import io.github.sceneview.math.colorOf
 import io.github.sceneview.model.ModelInstance
+import io.github.sceneview.node.CylinderNode
 import io.github.sceneview.node.ModelNode
 import io.github.sceneview.node.Node
 import kotlinx.coroutines.CoroutineScope
@@ -46,17 +47,6 @@ import kotlinx.coroutines.withContext
 import io.github.sceneview.math.Position as ScenePosition
 import io.github.sceneview.math.Rotation as SceneRotation
 import io.github.sceneview.math.Scale as SceneScale
-import io.github.sceneview.texture.ImageTexture
-import io.github.sceneview.material.setTexture
-import io.github.sceneview.ar.scene.PlaneRenderer
-import io.flutter.FlutterInjector
-import io.github.sceneview.node.CylinderNode
-import io.github.sceneview.math.Direction
-import io.github.sceneview.math.Rotation
-import io.github.sceneview.math.Scale
-import io.github.sceneview.math.colorOf
-import io.github.sceneview.loaders.MaterialLoader
-import com.google.ar.core.exceptions.SessionPausedException
 
 class ArView(
     context: Context,
@@ -76,11 +66,16 @@ class ArView(
     private val sessionChannel: MethodChannel = MethodChannel(messenger, "arsession_$id")
     private val objectChannel: MethodChannel = MethodChannel(messenger, "arobjects_$id")
     private val anchorChannel: MethodChannel = MethodChannel(messenger, "aranchors_$id")
+    
+    // ========== Managers ==========
+    private val faceArManager: FaceArManager
+    private val anchorManager: AnchorManager
+    
+    // ========== État local ==========
     private val nodesMap = mutableMapOf<String, ModelNode>()
     private var planeCount = 0
     private var selectedNode: Node? = null
     private val detectedPlanes = mutableSetOf<Plane>()
-    private val anchorNodesMap = mutableMapOf<String, AnchorNode>()
     private var showAnimatedGuide = true
     private var showFeaturePoints = false
     private val pointCloudNodes = mutableListOf<PointCloudNode>()
@@ -91,11 +86,20 @@ class ArView(
     private var handleRotation = false
     private var isSessionPaused = false
 
+    // ========== Stored Init Parameters ==========
+    private var storedShowPlanes = true
+    private var storedHandleTaps = true
+    private var storedPlaneDetectionConfig = 1
+    private var storedShowFeaturePoints = false
+    private var isInitialized = false
+
     private class PointCloudNode(
         modelInstance: ModelInstance,
         var id: Int,
         var confidence: Float,
     ) : ModelNode(modelInstance)
+
+    // ========== Method Handlers ==========
 
     private val onSessionMethodCall =
         MethodChannel.MethodCallHandler { call, result ->
@@ -103,32 +107,27 @@ class ArView(
                 "init" -> handleInit(call, result)
                 "showPlanes" -> handleShowPlanes(call, result)
                 "dispose" -> dispose()
-                "getAnchorPose" -> handleGetAnchorPose(call, result)
+                "getAnchorPose" -> anchorManager.handleGetAnchorPose(call, result)
                 "getCameraPose" -> handleGetCameraPose(result)
                 "snapshot" -> handleSnapshot(result)
                 "disableCamera" -> handleDisableCamera(result)
                 "enableCamera" -> handleEnableCamera(result)
+                // ========== Face AR Methods (déléguées à FaceArManager) ==========
+                "switchToFaceAR" -> faceArManager.handleSwitchToFaceAR(result) { newSceneView ->
+                    switchSceneView(newSceneView)
+                }
+                "switchToWorldAR" -> faceArManager.handleSwitchToWorldAR(result) {
+                    switchToWorldARSceneView()
+                }
+                "getCurrentMode" -> faceArManager.handleGetCurrentMode(result)
+                "setFaceModel" -> faceArManager.handleSetFaceModel(call, result)
+                "setFaceFilterColor" -> faceArManager.handleSetFaceFilterColor(call, result)
+                "setFaceFilterVisible" -> faceArManager.handleSetFaceFilterVisible(call, result)
+                // =====================================
                 else -> result.notImplemented()
             }
         }
-    private fun handleDisableCamera(result: MethodChannel.Result) {
-        try {
-            isSessionPaused = true
-            sceneView.session?.pause()
-            result.success(null)
-        } catch (e: Exception) {
-            result.error("DISABLE_CAMERA_ERROR", e.message, null)
-        }
-    }
-    private fun handleEnableCamera(result: MethodChannel.Result) {
-        try {
-            isSessionPaused = false
-            sceneView.session?.resume()
-            result.success(null)
-        } catch (e: Exception) {
-            result.error("ENABLE_CAMERA_ERROR", e.message, null)
-        }
-    }
+
     private val onObjectMethodCall =
         MethodChannel.MethodCallHandler { call, result ->
             when (call.method) {
@@ -140,12 +139,11 @@ class ArView(
                 }
                 "addNodeToPlaneAnchor" -> handleAddNodeToPlaneAnchor(call, result)
                 "addNodeToScreenPosition" -> handleAddNodeToScreenPosition(call, result)
-                "removeNode" -> {
-                    handleRemoveNode(call, result)
-                }
-                "transformationChanged" -> {
-                    handleTransformNode(call, result)
-                }
+                "removeNode" -> handleRemoveNode(call, result)
+                "transformationChanged" -> handleTransformNode(call, result)
+                // ========== Face AR Object Methods ==========
+                "addNodeToFace" -> handleAddNodeToFace(call, result)
+                // ============================================
                 else -> result.notImplemented()
             }
         }
@@ -153,20 +151,44 @@ class ArView(
     private val onAnchorMethodCall =
         MethodChannel.MethodCallHandler { call, result ->
             when (call.method) {
-                "addAnchor" -> handleAddAnchor(call, result)
+                "addAnchor" -> anchorManager.handleAddAnchor(call, result)
                 "removeAnchor" -> {
                     val anchorName = call.argument<String>("name")
-                    handleRemoveAnchor(anchorName, result)
+                    anchorManager.handleRemoveAnchor(anchorName, result)
                 }
-                "initGoogleCloudAnchorMode" -> handleInitGoogleCloudAnchorMode(result)
-                "uploadAnchor" -> handleUploadAnchor(call, result)
-                "downloadAnchor" -> handleDownloadAnchor(call, result)
+                "initGoogleCloudAnchorMode" -> anchorManager.handleInitGoogleCloudAnchorMode(result)
+                "uploadAnchor" -> anchorManager.handleUploadAnchor(call, result)
+                "downloadAnchor" -> anchorManager.handleDownloadAnchor(call, result)
                 else -> result.notImplemented()
             }
         }
 
     init {
-        sceneView = ARSceneView(
+        // Initialiser les managers
+        faceArManager = FaceArManager(context, lifecycle, sessionChannel, mainScope)
+        anchorManager = AnchorManager(sessionChannel, anchorChannel, mainScope)
+        
+        // Créer la vue World AR initiale
+        sceneView = createWorldARSceneView()
+        rootLayout.addView(sceneView)
+        
+        // Configurer les managers avec la sceneView
+        faceArManager.setSceneView(sceneView)
+        anchorManager.setSceneView(sceneView)
+
+        // Configurer les handlers
+        sessionChannel.setMethodCallHandler(onSessionMethodCall)
+        objectChannel.setMethodCallHandler(onObjectMethodCall)
+        anchorChannel.setMethodCallHandler(onAnchorMethodCall)
+    }
+
+    // ========== SceneView Management ==========
+
+    /**
+     * Crée une ARSceneView configurée pour World AR (caméra arrière)
+     */
+    private fun createWorldARSceneView(): ARSceneView {
+        return ARSceneView(
             context = viewContext,
             sharedLifecycle = lifecycle,
             sessionConfiguration = { session, config ->
@@ -176,49 +198,530 @@ class ArView(
                     lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
                     focusMode = Config.FocusMode.AUTO
                     planeFindingMode = Config.PlaneFindingMode.DISABLED
+                    augmentedFaceMode = Config.AugmentedFaceMode.DISABLED
                 }
             }
         )
-        
-        rootLayout.addView(sceneView)
-
-        sessionChannel.setMethodCallHandler(onSessionMethodCall)
-        objectChannel.setMethodCallHandler(onObjectMethodCall)
-        anchorChannel.setMethodCallHandler(onAnchorMethodCall)
     }
 
-    
+    /**
+     * Switch vers une nouvelle SceneView (utilisé pour Face AR)
+     */
+    private fun switchSceneView(newSceneView: ARSceneView) {
+        rootLayout.removeView(sceneView)
+        sceneView.destroy()
+        
+        sceneView = newSceneView
+        rootLayout.addView(sceneView)
+        
+        // Mettre à jour les références dans les managers
+        faceArManager.setSceneView(sceneView)
+        anchorManager.setSceneView(sceneView)
+    }
+
+    /**
+     * Switch vers World AR SceneView
+     */
+    private fun switchToWorldARSceneView() {
+        rootLayout.removeView(sceneView)
+        sceneView.destroy()
+        
+        sceneView = createWorldARSceneView()
+        rootLayout.addView(sceneView)
+        
+        // Mettre à jour les références dans les managers
+        faceArManager.setSceneView(sceneView)
+        anchorManager.setSceneView(sceneView)
+        
+        detectedPlanes.clear()
+        
+        // Reconfigurer si déjà initialisé
+        if (isInitialized) {
+            reconfigureWorldARSceneView()
+        }
+    }
+
+    /**
+     * Reconfigure la sceneView World AR avec les callbacks nécessaires
+     */
+    private fun reconfigureWorldARSceneView() {
+        try {
+            // Configurer la session ARCore
+            sceneView.session?.let { session ->
+                session.configure(session.config.apply {
+                    depthMode = when (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
+                        true -> Config.DepthMode.AUTOMATIC
+                        else -> Config.DepthMode.DISABLED
+                    }
+                    planeFindingMode = when (storedPlaneDetectionConfig) {
+                        1 -> Config.PlaneFindingMode.HORIZONTAL
+                        2 -> Config.PlaneFindingMode.VERTICAL
+                        3 -> Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
+                        else -> Config.PlaneFindingMode.DISABLED
+                    }
+                    augmentedFaceMode = Config.AugmentedFaceMode.DISABLED
+                })
+            }
+
+            sceneView.apply {
+                // Environment HDR
+                environment = environmentLoader.createHDREnvironment(
+                    assetFileLocation = "environments/evening_meadow_2k.hdr"
+                )!!
+
+                // Plane renderer
+                planeRenderer.isEnabled = storedShowPlanes
+                planeRenderer.isVisible = storedShowPlanes
+                planeRenderer.planeRendererMode = PlaneRenderer.PlaneRendererMode.RENDER_ALL
+
+                // Frame callback
+                onFrame = { frameTime ->
+                    try {
+                        if (!isSessionPaused && faceArManager.currentArMode == "world") {
+                            session?.update()?.let { frame ->
+                                // Masquer le guide animé quand un plan est détecté
+                                if (showAnimatedGuide) {
+                                    frame.getUpdatedTrackables(Plane::class.java).forEach { plane ->
+                                        if (plane.trackingState == TrackingState.TRACKING) {
+                                            rootLayout.findViewWithTag<View>("hand_motion_layout")?.let { handMotionLayout ->
+                                                rootLayout.removeView(handMotionLayout)
+                                                showAnimatedGuide = false
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Détection des plans
+                                frame.getUpdatedTrackables(Plane::class.java).forEach { plane ->
+                                    if (plane.trackingState == TrackingState.TRACKING &&
+                                        !detectedPlanes.contains(plane)
+                                    ) {
+                                        detectedPlanes.add(plane)
+                                        mainScope.launch {
+                                            sessionChannel.invokeMethod("onPlaneDetected", detectedPlanes.size)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        when (e) {
+                            is SessionPausedException -> {
+                                Log.d(TAG, "Session paused, skipping frame update")
+                            }
+                            else -> {
+                                Log.e(TAG, "Error during frame update", e)
+                            }
+                        }
+                    }
+                }
+
+                // Gesture listener pour les taps
+                setOnGestureListener(
+                    onSingleTapConfirmed = { motionEvent: MotionEvent, node: Node? ->
+                        if (node != null && storedHandleTaps) {
+                            var anchorName: String? = null
+                            var currentNode: Node? = node
+                            while (currentNode != null) {
+                                anchorManager.anchorNodesMap.forEach { (name, anchorNode) ->
+                                    if (currentNode == anchorNode) {
+                                        anchorName = name
+                                        return@forEach
+                                    }
+                                }
+                                if (anchorName != null) break
+                                currentNode = currentNode.parent
+                            }
+                            objectChannel.invokeMethod("onNodeTap", listOf(anchorName))
+                            true
+                        } else {
+                            // Tap sur une surface
+                            session?.update()?.let { frame ->
+                                val hitResults = frame.hitTest(motionEvent)
+
+                                val planeHits = hitResults
+                                    .filter { hit ->
+                                        val trackable = hit.trackable
+                                        trackable is Plane && trackable.trackingState == TrackingState.TRACKING
+                                    }.map { hit ->
+                                        mapOf(
+                                            "type" to 1,
+                                            "distance" to hit.distance.toDouble(),
+                                            "position" to mapOf(
+                                                "x" to hit.hitPose.tx().toDouble(),
+                                                "y" to hit.hitPose.ty().toDouble(),
+                                                "z" to hit.hitPose.tz().toDouble()
+                                            )
+                                        )
+                                    }
+                                notifyPlaneOrPointTap(planeHits)
+                            }
+                            true
+                        }
+                    },
+                )
+            }
+
+            // Réafficher le guide animé
+            showAnimatedGuide = true
+            
+            rootLayout.findViewWithTag<View>("hand_motion_layout")?.let {
+                rootLayout.removeView(it)
+            }
+            
+            val handMotionLayout = LayoutInflater
+                .from(viewContext)
+                .inflate(R.layout.sceneform_hand_layout, rootLayout, false)
+                .apply {
+                    tag = "hand_motion_layout"
+                }
+            rootLayout.addView(handMotionLayout)
+
+            Log.d(TAG, "✅ World AR SceneView reconfigured successfully")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error reconfiguring World AR SceneView", e)
+        }
+    }
+
+    // ========== Init Handler ==========
+
+    private fun handleInit(
+        call: MethodCall,
+        result: MethodChannel.Result,
+    ) {
+        try {
+            val argShowAnimatedGuide = call.argument<Boolean>("showAnimatedGuide") ?: true
+            val argShowFeaturePoints = call.argument<Boolean>("showFeaturePoints") ?: false
+            val argPlaneDetectionConfig: Int? = call.argument<Int>("planeDetectionConfig")
+            val argShowPlanes = call.argument<Boolean>("showPlanes") ?: true
+            val customPlaneTexturePath = call.argument<String>("customPlaneTexturePath")
+            val showWorldOrigin = call.argument<Boolean>("showWorldOrigin") ?: false
+            val handleTaps = call.argument<Boolean>("handleTaps") ?: true
+            handlePans = call.argument<Boolean>("handlePans") ?: false
+            handleRotation = call.argument<Boolean>("handleRotation") ?: false
+
+            // Store parameters for later use
+            storedShowPlanes = argShowPlanes
+            storedHandleTaps = handleTaps
+            storedPlaneDetectionConfig = argPlaneDetectionConfig ?: 1
+            storedShowFeaturePoints = argShowFeaturePoints
+            showAnimatedGuide = argShowAnimatedGuide
+            isInitialized = true
+
+            // Ne configurer la session World AR que si on est en mode World
+            if (faceArManager.currentArMode == "world") {
+                sceneView.session?.let { session ->
+                    session.configure(session.config.apply {
+                        depthMode = when (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
+                            true -> Config.DepthMode.AUTOMATIC
+                            else -> Config.DepthMode.DISABLED
+                        }
+                        planeFindingMode = when (argPlaneDetectionConfig) {
+                            1 -> Config.PlaneFindingMode.HORIZONTAL
+                            2 -> Config.PlaneFindingMode.VERTICAL
+                            3 -> Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
+                            else -> Config.PlaneFindingMode.DISABLED
+                        }
+                    })
+                }
+
+                handleShowWorldOrigin(showWorldOrigin)
+            }
+            
+            sceneView.apply {
+                environment = environmentLoader.createHDREnvironment(
+                    assetFileLocation = "environments/evening_meadow_2k.hdr"
+                )!!
+
+                if (faceArManager.currentArMode == "world") {
+                    planeRenderer.isEnabled = argShowPlanes
+                    planeRenderer.isVisible = argShowPlanes
+                    planeRenderer.planeRendererMode = PlaneRenderer.PlaneRendererMode.RENDER_ALL
+                }
+
+                onTrackingFailureChanged = { reason ->
+                    mainScope.launch {
+                        sessionChannel.invokeMethod("onTrackingFailure", reason?.name)
+                    }
+                }
+
+                if (argShowFeaturePoints == true) {
+                    showFeaturePoints = true
+                } else {
+                    showFeaturePoints = false
+                    pointCloudNodes.toList().forEach { removePointCloudNode(it) }
+                }
+
+                onFrame = { frameTime ->
+                    try {
+                        if (!isSessionPaused) {
+                            session?.update()?.let { frame ->
+                                // Gestion World AR
+                                if (faceArManager.currentArMode == "world") {
+                                    if (showAnimatedGuide) {
+                                        frame.getUpdatedTrackables(Plane::class.java).forEach { plane ->
+                                            if (plane.trackingState == TrackingState.TRACKING) {
+                                                rootLayout.findViewWithTag<View>("hand_motion_layout")?.let { handMotionLayout ->
+                                                    rootLayout.removeView(handMotionLayout)
+                                                    showAnimatedGuide = false
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (showFeaturePoints) {
+                                        val currentFps = frame.fps(lastPointCloudFrame)
+                                        if (currentFps < 10) {
+                                            frame.acquirePointCloud()?.let { pointCloud ->
+                                                if (pointCloud.timestamp != lastPointCloudTimestamp) {
+                                                    lastPointCloudFrame = frame
+                                                    lastPointCloudTimestamp = pointCloud.timestamp
+
+                                                    val pointsSize = pointCloud.ids?.limit() ?: 0
+
+                                                    pointCloudNodes.toList().forEach { removePointCloudNode(it) }
+
+                                                    val pointsBuffer = pointCloud.points
+                                                    for (index in 0 until pointsSize) {
+                                                        val pointIndex = index * 4
+                                                        val position = Position(
+                                                            pointsBuffer[pointIndex],
+                                                            pointsBuffer[pointIndex + 1],
+                                                            pointsBuffer[pointIndex + 2],
+                                                        )
+                                                        val confidence = pointsBuffer[pointIndex + 3]
+                                                        addPointCloudNode(index, position, confidence)
+                                                    }
+
+                                                    pointCloud.release()
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    frame.getUpdatedTrackables(Plane::class.java).forEach { plane ->
+                                        if (plane.trackingState == TrackingState.TRACKING &&
+                                            !detectedPlanes.contains(plane)
+                                        ) {
+                                            detectedPlanes.add(plane)
+                                            mainScope.launch {
+                                                sessionChannel.invokeMethod("onPlaneDetected", detectedPlanes.size)
+                                            }
+                                        }
+                                    }
+                                } else if (faceArManager.currentArMode == "face") {
+                                    // Gestion Face AR - déléguée au manager
+                                    faceArManager.processFaceFrame(frame)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        when (e) {
+                            is SessionPausedException -> {
+                                Log.d(TAG, "Session paused, skipping frame update")
+                            }
+                            else -> {
+                                Log.e(TAG, "Error during frame update", e)
+                                e.printStackTrace()
+                            }
+                        }
+                    }
+                }
+
+                setOnGestureListener(
+                    onSingleTapConfirmed = { motionEvent: MotionEvent, node: Node? ->
+                        if (node != null) {
+                            var anchorName: String? = null
+                            var currentNode: Node? = node
+                            while (currentNode != null) {
+                                anchorManager.anchorNodesMap.forEach { (name, anchorNode) ->
+                                    if (currentNode == anchorNode) {
+                                        anchorName = name
+                                        return@forEach
+                                    }
+                                }
+                                if (anchorName != null) break
+                                currentNode = currentNode.parent
+                            }
+                            objectChannel.invokeMethod("onNodeTap", listOf(anchorName))
+                            true
+                        } else {
+                            session?.update()?.let { frame ->
+                                val hitResults = frame.hitTest(motionEvent)
+
+                                Log.d(TAG, "Hit Results count: ${hitResults.size}")
+
+                                val planeHits = hitResults
+                                    .filter { hit ->
+                                        val trackable = hit.trackable
+                                        trackable is Plane && trackable.trackingState == TrackingState.TRACKING
+                                    }.map { hit ->
+                                        mapOf(
+                                            "type" to 1,
+                                            "distance" to hit.distance.toDouble(),
+                                            "position" to mapOf(
+                                                "x" to hit.hitPose.tx().toDouble(),
+                                                "y" to hit.hitPose.ty().toDouble(),
+                                                "z" to hit.hitPose.tz().toDouble()
+                                            )
+                                        )
+                                    }
+                                notifyPlaneOrPointTap(planeHits)
+                            }
+                            true
+                        }
+                    },
+                )
+            }
+
+            // Afficher le guide animé si demandé
+            if (argShowAnimatedGuide) {
+                val handMotionLayout = LayoutInflater
+                    .from(viewContext)
+                    .inflate(R.layout.sceneform_hand_layout, rootLayout, false)
+                    .apply {
+                        tag = "hand_motion_layout"
+                    }
+                rootLayout.addView(handMotionLayout)
+            }
+
+            result.success(null)
+        } catch (e: Exception) {
+            result.error("INIT_ERROR", e.message, null)
+        }
+    }
+
+    // ========== Camera Handlers ==========
+
+    private fun handleDisableCamera(result: MethodChannel.Result) {
+        try {
+            isSessionPaused = true
+            faceArManager.setSessionPaused(true)
+            sceneView.session?.pause()
+            result.success(null)
+        } catch (e: Exception) {
+            result.error("DISABLE_CAMERA_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleEnableCamera(result: MethodChannel.Result) {
+        try {
+            isSessionPaused = false
+            faceArManager.setSessionPaused(false)
+            sceneView.session?.resume()
+            result.success(null)
+        } catch (e: Exception) {
+            result.error("ENABLE_CAMERA_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleGetCameraPose(result: MethodChannel.Result) {
+        try {
+            val frame = sceneView.session?.update()
+            val cameraPose = frame?.camera?.pose
+            if (cameraPose != null) {
+                val poseData = mapOf(
+                    "position" to mapOf(
+                        "x" to cameraPose.tx(),
+                        "y" to cameraPose.ty(),
+                        "z" to cameraPose.tz()
+                    ),
+                    "rotation" to mapOf(
+                        "x" to cameraPose.rotationQuaternion[0],
+                        "y" to cameraPose.rotationQuaternion[1],
+                        "z" to cameraPose.rotationQuaternion[2],
+                        "w" to cameraPose.rotationQuaternion[3]
+                    )
+                )
+                result.success(poseData)
+            } else {
+                result.error("NO_CAMERA_POSE", "Camera pose is not available", null)
+            }
+        } catch (e: Exception) {
+            result.error("CAMERA_POSE_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleSnapshot(result: MethodChannel.Result) {
+        try {
+            mainScope.launch {
+                val bitmap = withContext(Dispatchers.Main) {
+                    val bitmap = Bitmap.createBitmap(
+                        sceneView.width,
+                        sceneView.height,
+                        Bitmap.Config.ARGB_8888
+                    )
+
+                    try {
+                        val listener = PixelCopy.OnPixelCopyFinishedListener { copyResult ->
+                            if (copyResult == PixelCopy.SUCCESS) {
+                                val outputStream = java.io.ByteArrayOutputStream()
+                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+                                result.success(outputStream.toByteArray())
+                            } else {
+                                result.error("SNAPSHOT_ERROR", "Failed to capture snapshot", null)
+                            }
+                        }
+
+                        PixelCopy.request(
+                            sceneView,
+                            bitmap,
+                            listener,
+                            Handler(Looper.getMainLooper())
+                        )
+                    } catch (e: Exception) {
+                        result.error("SNAPSHOT_ERROR", e.message, null)
+                    }
+
+                    bitmap
+                }
+            }
+        } catch (e: Exception) {
+            result.error("SNAPSHOT_ERROR", e.message, null)
+        }
+    }
+
+    private fun handleShowPlanes(
+        call: MethodCall,
+        result: MethodChannel.Result,
+    ) {
+        try {
+            val showPlanes = call.argument<Boolean>("showPlanes") ?: false
+            sceneView.apply {
+                planeRenderer.isEnabled = showPlanes
+            }
+            result.success(null)
+        } catch (e: Exception) {
+            result.error("SHOW_PLANES_ERROR", e.message, null)
+        }
+    }
+
+    // ========== Node Handlers ==========
 
     private suspend fun buildModelNode(nodeData: Map<String, Any>): ModelNode? {
         var fileLocation = nodeData["uri"] as? String ?: return null
         when (nodeData["type"] as Int) {
-                0 -> { // GLTF2 Model from Flutter asset folder
-                    // Get path to given Flutter asset
-                    val loader = FlutterInjector.instance().flutterLoader()
-                    fileLocation = loader.getLookupKeyForAsset(fileLocation)
-                }
-                1 -> { // GLB Model from the web
-                    fileLocation = fileLocation
-                }
-                2 -> { // fileSystemAppFolderGLB
-                    fileLocation = fileLocation
-                }
-                 3 -> { //fileSystemAppFolderGLTF2
-                    val documentsPath = viewContext.getApplicationInfo().dataDir
-                    val fileLocation = documentsPath + "/app_flutter/" + nodeData["uri"] as String
-                 }
-                else -> {
-                    return null
-                }
+            0 -> { // GLTF2 Model from Flutter asset folder
+                val loader = FlutterInjector.instance().flutterLoader()
+                fileLocation = loader.getLookupKeyForAsset(fileLocation)
+            }
+            1 -> { // GLB Model from the web
+                fileLocation = fileLocation
+            }
+            2 -> { // fileSystemAppFolderGLB
+                fileLocation = fileLocation
+            }
+            3 -> { // fileSystemAppFolderGLTF2
+                val documentsPath = viewContext.applicationInfo.dataDir
+                fileLocation = "$documentsPath/app_flutter/${nodeData["uri"] as String}"
+            }
+            else -> {
+                return null
+            }
         }
         
-        if (fileLocation == null) {
-            return null
-        }
-        val transformation = nodeData["transformation"] as? ArrayList<Double>
-        if (transformation == null) {
-            return null
-        }
+        val transformation = nodeData["transformation"] as? ArrayList<Double> ?: return null
 
         return try {
             sceneView.modelLoader.loadModelInstance(fileLocation)?.let { modelInstance ->
@@ -227,12 +730,12 @@ class ArView(
                     scaleToUnits = transformation.first().toFloat(),
                 ) {
                     override fun onMove(detector: MoveGestureDetector, e: MotionEvent): Boolean {
-                            if (handlePans) {
+                        if (handlePans) {
                             val defaultResult = super.onMove(detector, e)
                             objectChannel.invokeMethod("onPanChange", name)
                             return defaultResult
-                            }
-                    return false
+                        }
+                        return false
                     }
                     
                     override fun onMoveBegin(detector: MoveGestureDetector, e: MotionEvent): Boolean {
@@ -288,12 +791,32 @@ class ArView(
                     isRotationEditable = handleRotation
                     name = nodeData["name"] as? String
                 }
-            } ?: run {
-                null
             }
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        }
+    }
+
+    private fun handleAddNode(
+        nodeData: Map<String, Any>,
+        result: MethodChannel.Result,
+    ) {
+        try {
+            mainScope.launch {
+                val node = buildModelNode(nodeData)
+                if (node != null) {
+                    sceneView.addChildNode(node)
+                    node.name?.let { nodeName ->
+                        nodesMap[nodeName] = node
+                    }
+                    result.success(true)
+                } else {
+                    result.success(false)
+                }
+            }
+        } catch (e: Exception) {
+            result.success(false)
         }
     }
 
@@ -311,7 +834,7 @@ class ArView(
             }
 
             val anchorName = dict_anchor["name"] as? String
-            val anchorNode = anchorNodesMap[anchorName]
+            val anchorNode = anchorManager.anchorNodesMap[anchorName]
             if (anchorNode != null) {
                 mainScope.launch {
                     try {
@@ -350,256 +873,19 @@ class ArView(
 
             mainScope.launch {
                 val node = buildModelNode(nodeData) ?: return@launch
-                val hitResultNode =
-                    HitResultNode(
-                        engine = sceneView.engine,
-                        xPx = screenPosition["x"]?.toFloat() ?: 0f,
-                        yPx = screenPosition["y"]?.toFloat() ?: 0f,
-                    ).apply {
-                        addChildNode(node)
-                    }
+                val hitResultNode = HitResultNode(
+                    engine = sceneView.engine,
+                    xPx = screenPosition["x"]?.toFloat() ?: 0f,
+                    yPx = screenPosition["y"]?.toFloat() ?: 0f,
+                ).apply {
+                    addChildNode(node)
+                }
 
                 sceneView.addChildNode(hitResultNode)
                 result.success(null)
             }
         } catch (e: Exception) {
             result.error("ADD_NODE_TO_SCREEN_ERROR", e.message, null)
-        }
-    }
-
-    private fun handleInit(
-        call: MethodCall,
-        result: MethodChannel.Result,
-    ) {
-        try {
-            val argShowAnimatedGuide = call.argument<Boolean>("showAnimatedGuide") ?: true
-            val argShowFeaturePoints = call.argument<Boolean>("showFeaturePoints") ?: false
-            val argPlaneDetectionConfig: Int? = call.argument<Int>("planeDetectionConfig")
-            val argShowPlanes = call.argument<Boolean>("showPlanes") ?: true
-            val customPlaneTexturePath = call.argument<String>("customPlaneTexturePath")
-            val showWorldOrigin = call.argument<Boolean>("showWorldOrigin") ?: false
-            val handleTaps = call.argument<Boolean>("handleTaps") ?: true
-            handlePans = call.argument<Boolean>("handlePans") ?: false
-            handleRotation = call.argument<Boolean>("handleRotation") ?: false
-
-            sceneView.session?.let { session ->
-                session.configure(session.config.apply {
-                    depthMode = when (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
-                        true -> Config.DepthMode.AUTOMATIC
-                        else -> Config.DepthMode.DISABLED
-                    }
-                    planeFindingMode = when (argPlaneDetectionConfig) {
-                        1 -> Config.PlaneFindingMode.HORIZONTAL
-                        2 -> Config.PlaneFindingMode.VERTICAL
-                        3 -> Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
-                        else -> Config.PlaneFindingMode.DISABLED
-                    }
-                })
-            }
-
-            handleShowWorldOrigin(showWorldOrigin)
-            
-            sceneView.apply {
-                environment = environmentLoader.createHDREnvironment(
-                    assetFileLocation = "environments/evening_meadow_2k.hdr"
-                )!!
-
-                planeRenderer.isEnabled = argShowPlanes
-                planeRenderer.isVisible = argShowPlanes
-                planeRenderer.planeRendererMode = PlaneRenderer.PlaneRendererMode.RENDER_ALL
-
-                onTrackingFailureChanged = { reason ->
-                    mainScope.launch {
-                        sessionChannel.invokeMethod("onTrackingFailure", reason?.name)
-                    }
-                }
-
-                if (argShowFeaturePoints == true) {
-                    showFeaturePoints = true
-                } else {
-                    showFeaturePoints = false
-                    pointCloudNodes.toList().forEach { removePointCloudNode(it) }
-                }
-
-                onFrame = { frameTime ->
-                    try {
-                        if (!isSessionPaused) {
-                            session?.update()?.let { frame ->
-                                if (showAnimatedGuide) {
-                                    frame.getUpdatedTrackables(Plane::class.java).forEach { plane ->
-                                        if (plane.trackingState == TrackingState.TRACKING) {
-                                            rootLayout.findViewWithTag<View>("hand_motion_layout")?.let { handMotionLayout ->
-                                                rootLayout.removeView(handMotionLayout)
-                                                showAnimatedGuide = false
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if (showFeaturePoints) {
-                                    val currentFps = frame.fps(lastPointCloudFrame)
-                                    if (currentFps < 10) {
-                                        frame.acquirePointCloud()?.let { pointCloud ->
-                                            if (pointCloud.timestamp != lastPointCloudTimestamp) {
-                                                lastPointCloudFrame = frame
-                                                lastPointCloudTimestamp = pointCloud.timestamp
-
-                                                val pointsSize = pointCloud.ids?.limit() ?: 0
-
-                                                if (pointCloudNodes.isNotEmpty()) {
-                                                }
-                                                pointCloudNodes.toList().forEach { removePointCloudNode(it) }
-
-                                                val pointsBuffer = pointCloud.points
-                                                for (index in 0 until pointsSize) {
-                                                    val pointIndex = index * 4
-                                                    val position =
-                                                        Position(
-                                                            pointsBuffer[pointIndex],
-                                                            pointsBuffer[pointIndex + 1],
-                                                            pointsBuffer[pointIndex + 2],
-                                                        )
-                                                    val confidence = pointsBuffer[pointIndex + 3]
-                                                    addPointCloudNode(index, position, confidence)
-                                                }
-
-                                                pointCloud.release()
-                                            }
-                                        }
-                                    }
-                                }
-
-                                frame.getUpdatedTrackables(Plane::class.java).forEach { plane ->
-                                    if (plane.trackingState == TrackingState.TRACKING &&
-                                        !detectedPlanes.contains(plane)
-                                    ) {
-                                        detectedPlanes.add(plane)
-                                        mainScope.launch {
-                                            sessionChannel.invokeMethod("onPlaneDetected", detectedPlanes.size)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        when (e) {
-                            is SessionPausedException -> {
-                                // Ignorer silencieusement cette exception quand la session est en pause
-                                Log.d(TAG, "Session paused, skipping frame update")
-                            }
-                            else -> {
-                                Log.e(TAG, "Error during frame update", e)
-                                e.printStackTrace()
-                            }
-                        }
-                    }
-                }
-
-                setOnGestureListener(
-                    onSingleTapConfirmed = { motionEvent: MotionEvent, node: Node? ->
-                        if (node != null) {
-                            var anchorName: String? = null
-                            var currentNode: Node? = node
-                            while (currentNode != null) {
-                                anchorNodesMap.forEach { (name, anchorNode) ->
-                                    if (currentNode == anchorNode) {
-                                        anchorName = name
-                                        return@forEach
-                                    }
-                                }
-                                if (anchorName != null) break
-                                currentNode = currentNode.parent
-                            }
-                            if(handleTaps) {
-                                objectChannel.invokeMethod("onNodeTap", listOf(anchorName))
-                            }
-                            true
-                        } else {
-                            session?.update()?.let { frame ->
-                                val hitResults = frame.hitTest(motionEvent)
-
-                                Log.d("ArView", "Hit Results count: ${hitResults.size}")
-
-                                val planeHits =
-                                    hitResults
-                                        .filter { hit ->
-                                            val trackable = hit.trackable
-                                            trackable is Plane && trackable.trackingState == TrackingState.TRACKING
-                                        }.map { hit ->
-                                            mapOf(
-                                                "type" to 1,
-                                                "distance" to hit.distance.toDouble(),
-                                                "position" to
-                                                    mapOf(
-                                                        "x" to hit.hitPose.tx().toDouble(),
-                                                        "y" to hit.hitPose.ty().toDouble(),
-                                                        "z" to hit.hitPose.tz().toDouble(),
-                                                    ),
-                                            )
-                                        }
-                                notifyPlaneOrPointTap(planeHits)
-                            }
-                            true
-                        }
-                    },
-                )
-
-                if (argShowAnimatedGuide == true && showAnimatedGuide == true) {
-                    val handMotionLayout =
-                        LayoutInflater
-                            .from(context)
-                            .inflate(R.layout.sceneform_hand_layout, rootLayout, false)
-                            .apply {
-                                tag = "hand_motion_layout"
-                            }
-                    rootLayout.addView(handMotionLayout)
-                }
-
-                if (customPlaneTexturePath != null) {
-                    try {
-                        val loader = FlutterInjector.instance().flutterLoader()
-                        val assetKey = loader.getLookupKeyForAsset(customPlaneTexturePath)
-                        val customPlaneTexture =
-                            ImageTexture
-                                .Builder()
-                                .bitmap(materialLoader.assets, assetKey)
-                                .build(engine)
-                        planeRenderer.planeMaterial.defaultInstance.apply {
-                            setTexture(PlaneRenderer.MATERIAL_TEXTURE, customPlaneTexture)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erreur lors de l'application de la texture personnalisée: ${e.message}")
-                        Log.e(TAG, "Stack trace:", e)
-                    }
-                } else {
-                    Log.i(TAG, "ℹ️ Utilisation de la texture par défaut")
-                }
-            }
-            result.success(null)
-        } catch (e: Exception) {
-            result.error("AR_VIEW_ERROR", e.message, null)
-        }
-    }
-
-    private fun handleAddNode(
-        nodeData: Map<String, Any>,
-        result: MethodChannel.Result,
-    ) {
-        try {
-            mainScope.launch {
-                val node = buildModelNode(nodeData)
-                if (node != null) {
-                    sceneView.addChildNode(node)
-                    node.name?.let { nodeName ->
-                        nodesMap[nodeName] = node
-                    }
-                    result.success(true)
-                } else {
-                    result.success(false)
-                }
-            }
-        } catch (e: Exception) {
-            result.success(false)
         }
     }
 
@@ -620,13 +906,9 @@ class ArView(
             Log.d(TAG, "Current nodes in map: ${nodesMap.keys}")
             
             nodesMap[nodeName]?.let { node ->
-                // Détacher d'abord le nœud de son parent s'il en a un
                 node.parent?.removeChildNode(node)
-                // Puis le retirer de la scène principale
                 sceneView.removeChildNode(node)
-                // Nettoyer les ressources du nœud
                 node.destroy()
-                // Enfin le retirer de notre Map
                 nodesMap.remove(nodeName)
                 
                 Log.d(TAG, "Node removed successfully and destroyed")
@@ -640,8 +922,6 @@ class ArView(
             result.error("REMOVE_NODE_ERROR", e.message, null)
         }
     }
-
-
 
     private fun handleTransformNode(
         call: MethodCall,
@@ -664,14 +944,12 @@ class ArView(
                             return
                         }
 
-                        // ✅ 1. Extraire la position (dernière colonne)
                         val position = ScenePosition(
                             x = transform[12].toFloat(),
                             y = transform[13].toFloat(),
                             z = transform[14].toFloat()
                         )
 
-                        // ✅ 2. Calculer le scale
                         val scaleX = kotlin.math.sqrt(
                             (transform[0] * transform[0] + 
                             transform[1] * transform[1] + 
@@ -688,7 +966,6 @@ class ArView(
                             transform[10] * transform[10]).toFloat()
                         )
 
-                        // ✅ 3. Normaliser la matrice de rotation en divisant par le scale
                         val m00 = transform[0].toFloat() / scaleX
                         val m01 = transform[1].toFloat() / scaleX
                         val m02 = transform[2].toFloat() / scaleX
@@ -699,7 +976,6 @@ class ArView(
                         val m21 = transform[9].toFloat() / scaleZ
                         val m22 = transform[10].toFloat() / scaleZ
 
-                        // ✅ 4. Extraire les angles d'Euler à partir de la matrice normalisée
                         val rotation = SceneRotation(
                             x = kotlin.math.atan2(m21, m22),
                             y = kotlin.math.atan2(-m02, kotlin.math.sqrt(m12 * m12 + m22 * m22)),
@@ -712,7 +988,6 @@ class ArView(
                             z = scaleZ
                         )
 
-                        // ✅ 5. Appliquer la transformation
                         node.transform(
                             position = position,
                             rotation = rotation,
@@ -728,568 +1003,87 @@ class ArView(
         }
     }
 
-    private fun handleResolveCloudAnchor(
-        call: MethodCall,
-        result: MethodChannel.Result,
-    ) {
+    // ========== Face AR Node Handler ==========
+
+    private fun handleAddNodeToFace(call: MethodCall, result: MethodChannel.Result) {
+        if (faceArManager.currentArMode != "face") {
+            result.error("WRONG_MODE", "Must be in Face AR mode to add nodes to face", null)
+            return
+        }
+
         try {
-            val cloudAnchorId = call.argument<String>("cloudAnchorId")
-            if (cloudAnchorId == null) {
-                result.error("INVALID_ARGUMENT", "Cloud Anchor ID is required", null)
+            val nodeData = call.arguments as? Map<String, Any>
+            if (nodeData == null) {
+                result.error("INVALID_ARGUMENT", "Node data is required", null)
                 return
             }
 
-            val session = sceneView.session
-            if (session == null) {
-                result.error("SESSION_ERROR", "AR Session is not available", null)
-                return
-            }
-
-            CloudAnchorNode.resolve(
-                sceneView.engine,
-                session,
-                cloudAnchorId,
-            ) { state, node ->
-                if (!state.isError && node != null) {
-                    sceneView.addChildNode(node)
-                    result.success(null)
-                } else {
-                    result.error("RESOLVE_ERROR", "Failed to resolve cloud anchor: $state", null)
-                }
-            }
-        } catch (e: Exception) {
-            result.error("RESOLVE_CLOUD_ANCHOR_ERROR", e.message, null)
-        }
-    }
-
-    private fun handleRemoveAnchor(
-        anchorName: String?,
-        result: MethodChannel.Result,
-    ) {
-        try {
-            if (anchorName == null) {
-                result.error("INVALID_ARGUMENT", "Anchor name is required", null)
-                return
-            }
-
-            val anchor = anchorNodesMap[anchorName]
-            if (anchor != null) {
-                sceneView.removeChildNode(anchor)
-                anchor.anchor?.detach()
-                result.success(null)
-            } else {
-                result.error("ANCHOR_NOT_FOUND", "Anchor with name $anchorName not found", null)
-            }
-        } catch (e: Exception) {
-            result.error("REMOVE_ANCHOR_ERROR", e.message, null)
-        }
-    }
-
-    private fun handleGetCameraPose(result: MethodChannel.Result) {
-        try {
-            val frame = sceneView.session?.update()
-            val cameraPose = frame?.camera?.pose
-            if (cameraPose != null) {
-                val poseData =
-                    mapOf(
-                        "position" to
-                            mapOf(
-                                "x" to cameraPose.tx(),
-                                "y" to cameraPose.ty(),
-                                "z" to cameraPose.tz(),
-                            ),
-                        "rotation" to
-                            mapOf(
-                                "x" to cameraPose.rotationQuaternion[0],
-                                "y" to cameraPose.rotationQuaternion[1],
-                                "z" to cameraPose.rotationQuaternion[2],
-                                "w" to cameraPose.rotationQuaternion[3],
-                            ),
-                    )
-                result.success(poseData)
-            } else {
-                result.error("NO_CAMERA_POSE", "Camera pose is not available", null)
-            }
-        } catch (e: Exception) {
-            result.error("CAMERA_POSE_ERROR", e.message, null)
-        }
-    }
-
-    private fun handleGetAnchorPose(
-        call: MethodCall,
-        result: MethodChannel.Result,
-    ) {
-        try {
-            val anchorId = call.argument<String>("anchorId")
-            if (anchorId == null) {
-                result.error("INVALID_ARGUMENT", "Anchor ID is required", null)
-                return
-            }
-
-            val anchor = sceneView.session?.allAnchors?.find { it.cloudAnchorId == anchorId }
-            if (anchor != null) {
-                val anchorPose = anchor.pose
-                val poseData =
-                    mapOf(
-                        "position" to
-                            mapOf(
-                                "x" to anchorPose.tx(),
-                                "y" to anchorPose.ty(),
-                                "z" to anchorPose.tz(),
-                            ),
-                        "rotation" to
-                            mapOf(
-                                "x" to anchorPose.rotationQuaternion[0],
-                                "y" to anchorPose.rotationQuaternion[1],
-                                "z" to anchorPose.rotationQuaternion[2],
-                                "w" to anchorPose.rotationQuaternion[3],
-                            ),
-                    )
-                result.success(poseData)
-            } else {
-                result.error("ANCHOR_NOT_FOUND", "Anchor with ID $anchorId not found", null)
-            }
-        } catch (e: Exception) {
-            result.error("ANCHOR_POSE_ERROR", e.message, null)
-        }
-    }
-
-    private fun handleSnapshot(result: MethodChannel.Result) {
-        try {
+            val region = nodeData["region"] as? String ?: "nose"
+            
             mainScope.launch {
-                val bitmap =
-                    withContext(Dispatchers.Main) {
-                        val bitmap =
-                            Bitmap.createBitmap(
-                                sceneView.width,
-                                sceneView.height,
-                                Bitmap.Config.ARGB_8888,
-                            )
-
-                        try {
-                            val listener =
-                                PixelCopy.OnPixelCopyFinishedListener { copyResult ->
-                                    if (copyResult == PixelCopy.SUCCESS) {
-                                        val byteStream = java.io.ByteArrayOutputStream()
-                                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteStream)
-                                        val byteArray = byteStream.toByteArray()
-                                        result.success(byteArray)
-                                    } else {
-                                        result.error("SNAPSHOT_ERROR", "Failed to capture snapshot", null)
-                                    }
-                                }
-
-                            PixelCopy.request(
-                                sceneView,
-                                bitmap,
-                                listener,
-                                Handler(Looper.getMainLooper()),
-                            )
-                        } catch (e: Exception) {
-                            result.error("SNAPSHOT_ERROR", e.message, null)
-                        }
-                    }
-            }
-        } catch (e: Exception) {
-            result.error("SNAPSHOT_ERROR", e.message, null)
-        }
-    }
-
-    private fun handleShowPlanes(
-        call: MethodCall,
-        result: MethodChannel.Result,
-    ) {
-        try {
-            val showPlanes = call.argument<Boolean>("showPlanes") ?: false
-            sceneView.apply {
-                planeRenderer.isEnabled = showPlanes
-            }
-            result.success(null)
-        } catch (e: Exception) {
-            result.error("SHOW_PLANES_ERROR", e.message, null)
-        }
-    }
-
-    private fun handleAddAnchor(
-        call: MethodCall,
-        result: MethodChannel.Result,
-    ) {
-        try {
-            val anchorType = call.argument<Int>("type")
-            if (anchorType == 0) { // Plane Anchor
-                val transform = call.argument<ArrayList<Double>>("transformation")
-                val name = call.argument<String>("name")
-
-                if (name != null && transform != null) {
-                    try {
-                        // ✅ Extraire position
-                        val position = Position(
-                            x = transform[12].toFloat(),
-                            y = transform[13].toFloat(),
-                            z = transform[14].toFloat()
+                val node = buildModelNode(nodeData)
+                if (node != null) {
+                    val faces = sceneView.session?.getAllTrackables(AugmentedFace::class.java)
+                        ?.filter { it.trackingState == TrackingState.TRACKING }
+                    
+                    val face = faces?.firstOrNull()
+                    if (face != null) {
+                        val faceId = face.hashCode()
+                        
+                        val regionPose = faceArManager.getRegionPose(face, region)
+                        node.position = ScenePosition(
+                            x = regionPose.tx(),
+                            y = regionPose.ty(),
+                            z = regionPose.tz()
                         )
                         
-                        // ✅ Extraire le quaternion directement de la matrice
-                        val m = FloatArray(16) { i -> transform[i].toFloat() }
-                        
-                        // Calculer le scale
-                        val scaleX = kotlin.math.sqrt(m[0]*m[0] + m[1]*m[1] + m[2]*m[2])
-                        val scaleY = kotlin.math.sqrt(m[4]*m[4] + m[5]*m[5] + m[6]*m[6])
-                        val scaleZ = kotlin.math.sqrt(m[8]*m[8] + m[9]*m[9] + m[10]*m[10])
-                        
-                        // Normaliser la matrice de rotation
-                        val r = FloatArray(9)
-                        r[0] = m[0] / scaleX; r[1] = m[1] / scaleX; r[2] = m[2] / scaleX
-                        r[3] = m[4] / scaleY; r[4] = m[5] / scaleY; r[5] = m[6] / scaleY
-                        r[6] = m[8] / scaleZ; r[7] = m[9] / scaleZ; r[8] = m[10] / scaleZ
-                        
-                        // ✅ Convertir matrice 3x3 en quaternion
-                        val trace = r[0] + r[4] + r[8]
-                        val quat = FloatArray(4)
-                        
-                        if (trace > 0) {
-                            val s = 0.5f / kotlin.math.sqrt(trace + 1.0f)
-                            quat[3] = 0.25f / s  // w
-                            quat[0] = (r[7] - r[5]) * s  // x
-                            quat[1] = (r[2] - r[6]) * s  // y
-                            quat[2] = (r[3] - r[1]) * s  // z
-                        } else if (r[0] > r[4] && r[0] > r[8]) {
-                            val s = 2.0f * kotlin.math.sqrt(1.0f + r[0] - r[4] - r[8])
-                            quat[3] = (r[7] - r[5]) / s  // w
-                            quat[0] = 0.25f * s  // x
-                            quat[1] = (r[1] + r[3]) / s  // y
-                            quat[2] = (r[2] + r[6]) / s  // z
-                        } else if (r[4] > r[8]) {
-                            val s = 2.0f * kotlin.math.sqrt(1.0f + r[4] - r[0] - r[8])
-                            quat[3] = (r[2] - r[6]) / s  // w
-                            quat[0] = (r[1] + r[3]) / s  // x
-                            quat[1] = 0.25f * s  // y
-                            quat[2] = (r[5] + r[7]) / s  // z
-                        } else {
-                            val s = 2.0f * kotlin.math.sqrt(1.0f + r[8] - r[0] - r[4])
-                            quat[3] = (r[3] - r[1]) / s  // w
-                            quat[0] = (r[2] + r[6]) / s  // x
-                            quat[1] = (r[5] + r[7]) / s  // y
-                            quat[2] = 0.25f * s  // z
+                        sceneView.addChildNode(node)
+                        faceArManager.faceNodesMap[faceId] = node
+                        node.name?.let { nodeName ->
+                            nodesMap[nodeName] = node
                         }
-
-                        // ✅ Créer le Pose avec le quaternion (x, y, z, w)
-                        val pose = Pose(
-                            floatArrayOf(position.x, position.y, position.z),
-                            floatArrayOf(quat[0], quat[1], quat[2], quat[3])
-                        )
-
-                        val anchor = sceneView.session?.createAnchor(pose)
-                        if (anchor != null) {
-                            val anchorNode = AnchorNode(sceneView.engine, anchor)
-                            sceneView.addChildNode(anchorNode)
-                            anchorNodesMap[name] = anchorNode
-                            result.success(true)
-                        } else {
-                            result.success(false)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in handleAddAnchor: ${e.message}")
-                        result.success(false)
+                        
+                        result.success(true)
+                    } else {
+                        result.error("NO_FACE", "No face detected", null)
                     }
                 } else {
                     result.success(false)
                 }
-            } else {
-                result.success(false)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error in handleAddAnchor: ${e.message}")
-            e.printStackTrace()
-            result.success(false)
+            Log.e(TAG, "❌ Error adding node to face", e)
+            result.error("ADD_NODE_TO_FACE_ERROR", e.message, null)
         }
     }
 
-    private fun handleInitGoogleCloudAnchorMode(result: MethodChannel.Result) {
-        try {
-            Log.d(TAG, "🔄 Initialisation du mode Cloud Anchor...")
-            sceneView.session?.let { session ->
-                session.configure(session.config.apply {
-                    cloudAnchorMode = Config.CloudAnchorMode.ENABLED
-                })
+    // ========== Utility Methods ==========
+
+    private fun handleShowWorldOrigin(show: Boolean) {
+        if (show) {
+            if (worldOriginNode == null) {
+                worldOriginNode = makeWorldOriginNode(viewContext)
             }
-            result.success(null)
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Erreur lors de l'initialisation du mode Cloud Anchor", e)
-            mainScope.launch {
-                sessionChannel.invokeMethod("onError", listOf("Error initializing cloud anchor mode: ${e.message}"))
+            worldOriginNode?.let { node ->
+                sceneView.addChildNode(node)
             }
-            result.error("CLOUD_ANCHOR_INIT_ERROR", e.message, null)
+        } else {
+            worldOriginNode?.let { node ->
+                sceneView.removeChildNode(node)
+            }
+            worldOriginNode = null
         }
-    }
-
-    private fun handleUploadAnchor(call: MethodCall, result: MethodChannel.Result) {
-        try {
-            val anchorName = call.argument<String>("name")
-            Log.d(TAG, "⚓ Début de l'upload de l'ancre: $anchorName")
-            
-            // Vérifier si le mode Cloud Anchor est initialisé
-            val session = sceneView.session
-            if (session == null) {
-                Log.e(TAG, "❌ Erreur: session AR non disponible")
-                result.error("SESSION_ERROR", "AR Session is not available", null)
-                return
-            }
-
-            // Vérifier et initialiser le mode Cloud Anchor si nécessaire
-            Log.d(TAG, "🔄 Vérification de la configuration Cloud Anchor...")
-            try {
-                sceneView.configureSession { session, config ->
-                    config.cloudAnchorMode = Config.CloudAnchorMode.ENABLED
-                    config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
-                }
-                Log.d(TAG, "✅ Mode Cloud Anchor configuré avec succès")
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erreur lors de la configuration du mode Cloud Anchor", e)
-                result.error("CLOUD_ANCHOR_CONFIG_ERROR", e.message, null)
-                return
-            }
-
-            // Continuer avec le reste du code existant...
-            if (anchorName == null) {
-                Log.e(TAG, "❌ Erreur: nom de l'ancre manquant")
-                result.error("INVALID_ARGUMENT", "Anchor name is required", null)
-                return
-            }
-
-            Log.d(TAG, "📱 Vérification de la capacité à héberger l'ancre cloud...")
-            if (!session.canHostCloudAnchor(sceneView.cameraNode)) {
-                Log.e(TAG, "❌ Erreur: données visuelles insuffisantes pour héberger l'ancre cloud")
-                result.error("HOSTING_ERROR", "Insufficient visual data to host", null)
-                return
-            }
-
-            val anchorNode = anchorNodesMap[anchorName]
-            if (anchorNode == null) {
-                Log.e(TAG, "❌ Erreur: ancre non trouvée: $anchorName")
-                Log.d(TAG, "📍 Ancres disponibles: ${anchorNodesMap.keys}")
-                result.error("ANCHOR_NOT_FOUND", "Anchor not found: $anchorName", null)
-                return
-            }
-
-            Log.d(TAG, "🔄 Création du CloudAnchorNode...")
-            val cloudAnchorNode = CloudAnchorNode(sceneView.engine, anchorNode.anchor!!)
-            
-            Log.d(TAG, "☁️ Début de l'hébergement de l'ancre cloud...")
-            cloudAnchorNode.host(session) { cloudAnchorId, state ->
-                Log.d(TAG, "📡 État de l'hébergement: $state, ID: $cloudAnchorId")
-                mainScope.launch {
-                    if (state == CloudAnchorState.SUCCESS && cloudAnchorId != null) {
-                        Log.d(TAG, "✅ Ancre cloud hébergée avec succès: $cloudAnchorId")
-                        val args = mapOf(
-                            "name" to anchorName,
-                            "cloudanchorid" to cloudAnchorId
-                        )
-                        anchorChannel.invokeMethod("onCloudAnchorUploaded", args)
-                        result.success(true)
-                    } else {
-                        Log.e(TAG, "❌ Échec de l'hébergement de l'ancre cloud: $state")
-                        sessionChannel.invokeMethod("onError", listOf("Failed to host cloud anchor: $state"))
-                        result.error("HOSTING_ERROR", "Failed to host cloud anchor: $state", null)
-                    }
-                }
-            }
-            
-            Log.d(TAG, "➕ Ajout du CloudAnchorNode à la scène...")
-            sceneView.addChildNode(cloudAnchorNode)
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Exception lors de l'upload de l'ancre", e)
-            Log.e(TAG, "Stack trace:", e)
-            result.error("UPLOAD_ANCHOR_ERROR", e.message, null)
-        }
-    }
-
-    private fun handleDownloadAnchor(call: MethodCall, result: MethodChannel.Result) {
-        try {
-            val cloudAnchorId = call.argument<String>("cloudanchorid")
-            if (cloudAnchorId == null) {
-                mainScope.launch {
-                    sessionChannel.invokeMethod("onError", listOf("Cloud Anchor ID is required"))
-                }
-                result.error("INVALID_ARGUMENT", "Cloud Anchor ID is required", null)
-                return
-            }
-
-            val session = sceneView.session
-            if (session == null) {
-                mainScope.launch {
-                    sessionChannel.invokeMethod("onError", listOf("AR Session is not available"))
-                }
-                result.error("SESSION_ERROR", "AR Session is not available", null)
-                return
-            }
-
-            CloudAnchorNode.resolve(
-                sceneView.engine,
-                session,
-                cloudAnchorId
-            ) { state, node ->
-                mainScope.launch {
-                    if (!state.isError && node != null) {
-                        sceneView.addChildNode(node)
-                        val anchorData = mapOf(
-                            "type" to 0,
-                            "cloudanchorid" to cloudAnchorId
-                        )
-                        anchorChannel.invokeMethod(
-                            "onAnchorDownloadSuccess",
-                            anchorData,
-                            object : MethodChannel.Result {
-                                override fun success(result: Any?) {
-                                    val anchorName = result.toString()
-                                    anchorNodesMap[anchorName] = node
-                                }
-
-                                override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
-                                    sessionChannel.invokeMethod("onError", listOf("Error registering downloaded anchor: $errorMessage"))
-                                }
-
-                                override fun notImplemented() {
-                                    sessionChannel.invokeMethod("onError", listOf("Error registering downloaded anchor: not implemented"))
-                                }
-                            }
-                        )
-                        result.success(true)
-                    } else {
-                        sessionChannel.invokeMethod("onError", listOf("Failed to resolve cloud anchor: $state"))
-                        result.error("RESOLVE_ERROR", "Failed to resolve cloud anchor: $state", null)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            mainScope.launch {
-                sessionChannel.invokeMethod("onError", listOf("Error downloading anchor: ${e.message}"))
-            }
-            result.error("DOWNLOAD_ANCHOR_ERROR", e.message, null)
-        }
-    }
-
-    override fun getView(): View = rootLayout
-
-    override fun dispose() {
-        Log.i(TAG, "dispose")
-        sessionChannel.setMethodCallHandler(null)
-        objectChannel.setMethodCallHandler(null)
-        anchorChannel.setMethodCallHandler(null)
-        nodesMap.clear()
-        sceneView.destroy()
-        pointCloudNodes.toList().forEach { removePointCloudNode(it) }
-        pointCloudModelInstances.clear()
-    }
-
-    private fun notifyError(error: String) {
-        mainScope.launch {
-            sessionChannel.invokeMethod("onError", listOf(error))
-        }
-    }
-
-    private fun notifyCloudAnchorUploaded(args: Map<String, Any>) {
-        mainScope.launch {
-            anchorChannel.invokeMethod("onCloudAnchorUploaded", args)
-        }
-    }
-
-    private fun notifyAnchorDownloadSuccess(
-        anchorData: Map<String, Any>,
-        result: MethodChannel.Result,
-    ) {
-        mainScope.launch {
-            anchorChannel.invokeMethod(
-                "onAnchorDownloadSuccess",
-                anchorData,
-                object : MethodChannel.Result {
-                    override fun success(result: Any?) {
-                        val anchorName = result.toString()
-                        // Mettre à jour l'ancre avec le nom reçu
-                    }
-
-                    override fun error(
-                        errorCode: String,
-                        errorMessage: String?,
-                        errorDetails: Any?,
-                    ) {
-                        notifyError("Error while registering downloaded anchor: $errorMessage")
-                    }
-
-                    override fun notImplemented() {
-                        notifyError("Error while registering downloaded anchor")
-                    }
-                },
-            )
-        }
-    }
-
-    private fun notifyPlaneOrPointTap(hitResults: List<Map<String, Any>>) {
-        mainScope.launch {
-            try {
-                val serializedResults = ArrayList<HashMap<String, Any>>()
-                hitResults.forEach { hit ->
-                    serializedResults.add(serializeHitResult(hit))
-                }
-                sessionChannel.invokeMethod("onPlaneOrPointTap", serializedResults)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    private fun getPointCloudModelInstance(): ModelInstance? {
-        if (pointCloudModelInstances.isEmpty()) {
-            pointCloudModelInstances =
-                sceneView.modelLoader
-                    .createInstancedModel(
-                        assetFileLocation = "models/point_cloud.glb",
-                        count = 1000,
-                    ).toMutableList()
-        }
-        return pointCloudModelInstances.removeLastOrNull()
-    }
-
-    private fun addPointCloudNode(
-        id: Int,
-        position: Position,
-        confidence: Float,
-    ) {
-        if (pointCloudNodes.size < 1000) { // Limite max de points
-            getPointCloudModelInstance()?.let { modelInstance ->
-                val pointCloudNode =
-                    PointCloudNode(
-                        modelInstance = modelInstance,
-                        id = id,
-                        confidence = confidence,
-                    ).apply {
-                        this.position = position
-                    }
-                pointCloudNodes += pointCloudNode
-                sceneView.addChildNode(pointCloudNode)
-            }
-        }
-    }
-
-    private fun removePointCloudNode(pointCloudNode: PointCloudNode) {
-        pointCloudNodes -= pointCloudNode
-        sceneView.removeChildNode(pointCloudNode)
-        pointCloudNode.destroy()
     }
 
     private fun makeWorldOriginNode(context: Context): Node {
         val axisSize = 0.1f
         val axisRadius = 0.005f
         
-        // Utilisation de l'engine de sceneView
         val engine = sceneView.engine
         val materialLoader = MaterialLoader(engine, context)
         
-        // Création du noeud racine
         val rootNode = Node(engine = engine)
         
-        // Création des cylindres avec leurs matériaux respectifs
         val xNode = CylinderNode(
             engine = engine,
             radius = axisRadius,
@@ -1327,38 +1121,93 @@ class ArView(
         rootNode.addChildNode(yNode)
         rootNode.addChildNode(zNode)
 
-        // Positionnement des axes
         xNode.position = Position(axisSize / 2, 0f, 0f)
-        xNode.rotation = Rotation(0f, 0f, 90f)  // Rotation autour de l'axe Z
+        xNode.rotation = Rotation(0f, 0f, 90f)
 
         yNode.position = Position(0f, axisSize / 2, 0f)
-        // Pas besoin de rotation pour l'axe Y car il est déjà orienté correctement
 
         zNode.position = Position(0f, 0f, axisSize / 2)
-        zNode.rotation = Rotation(90f, 0f, 0f)  // Rotation autour de l'axe X
+        zNode.rotation = Rotation(90f, 0f, 0f)
 
         return rootNode
     }
 
-    private fun handleShowWorldOrigin(show: Boolean) {
-        if (show) {
-            // Création du nouveau node seulement si nécessaire
-            if (worldOriginNode == null) {
-                worldOriginNode = makeWorldOriginNode(viewContext)
+    private fun getPointCloudModelInstance(): ModelInstance? {
+        if (pointCloudModelInstances.isEmpty()) {
+            pointCloudModelInstances = sceneView.modelLoader
+                .createInstancedModel(
+                    assetFileLocation = "models/point_cloud.glb",
+                    count = 1000,
+                ).toMutableList()
+        }
+        return pointCloudModelInstances.removeLastOrNull()
+    }
+
+    private fun addPointCloudNode(
+        id: Int,
+        position: Position,
+        confidence: Float,
+    ) {
+        if (pointCloudNodes.size < 1000) {
+            getPointCloudModelInstance()?.let { modelInstance ->
+                val pointCloudNode = PointCloudNode(
+                    modelInstance = modelInstance,
+                    id = id,
+                    confidence = confidence,
+                ).apply {
+                    this.position = position
+                }
+                pointCloudNodes += pointCloudNode
+                sceneView.addChildNode(pointCloudNode)
             }
-            // Utilisation du safe call operator
-            worldOriginNode?.let { node ->
-                sceneView.addChildNode(node)
-            }
-        } else {
-            // Utilisation du safe call operator
-            worldOriginNode?.let { node ->
-                sceneView.removeChildNode(node)
-            }
-            // Optionnel : remettre à null après suppression
-            worldOriginNode = null
         }
     }
 
-    
+    private fun removePointCloudNode(pointCloudNode: PointCloudNode) {
+        pointCloudNodes -= pointCloudNode
+        sceneView.removeChildNode(pointCloudNode)
+        pointCloudNode.destroy()
+    }
+
+    // ========== Notifications ==========
+
+    private fun notifyError(error: String) {
+        mainScope.launch {
+            sessionChannel.invokeMethod("onError", listOf(error))
+        }
+    }
+
+    private fun notifyPlaneOrPointTap(hitResults: List<Map<String, Any>>) {
+        mainScope.launch {
+            try {
+                val serializedResults = ArrayList<HashMap<String, Any>>()
+                hitResults.forEach { hit ->
+                    serializedResults.add(serializeHitResult(hit))
+                }
+                sessionChannel.invokeMethod("onPlaneOrPointTap", serializedResults)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // ========== PlatformView Implementation ==========
+
+    override fun getView(): View = rootLayout
+
+    override fun dispose() {
+        Log.i(TAG, "dispose")
+        sessionChannel.setMethodCallHandler(null)
+        objectChannel.setMethodCallHandler(null)
+        anchorChannel.setMethodCallHandler(null)
+        
+        // Cleanup managers
+        faceArManager.cleanup()
+        anchorManager.cleanup()
+        
+        nodesMap.clear()
+        sceneView.destroy()
+        pointCloudNodes.toList().forEach { removePointCloudNode(it) }
+        pointCloudModelInstances.clear()
+    }
 }

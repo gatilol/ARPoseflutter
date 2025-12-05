@@ -37,6 +37,12 @@ class ARSessionManager {
   /// Callback that is triggered once error is triggered
   ErrorHandler? onError;
 
+  // ========== Face AR Callbacks ==========
+  Function(bool detected)? onFaceDetected;
+  Function(Map<String, dynamic> pose)? onFacePoseUpdate;
+  Function(String mode)? onModeChanged;
+  // =======================================
+
   ARSessionManager(int id, this.buildContext, this.planeDetectionConfig,
       {this.debug = false}) {
     _channel = MethodChannel('arsession_$id');
@@ -167,6 +173,21 @@ class ARSessionManager {
             onPlaneDetected(planeCountResult);
           }
           break;
+        // ========== Face AR Callbacks ==========
+        case 'onFaceDetected':
+          final detected = call.arguments as bool? ?? false;
+          onFaceDetected?.call(detected);
+          break;
+        case 'onFacePoseUpdate':
+          if (call.arguments != null) {
+            onFacePoseUpdate?.call(Map<String, dynamic>.from(call.arguments));
+          }
+          break;
+        case 'onModeChanged':
+          final mode = call.arguments as String? ?? 'world';
+          onModeChanged?.call(mode);
+          break;
+        // =======================================
         case 'dispose':
           _channel.invokeMethod<void>("dispose");
           break;
@@ -223,4 +244,95 @@ class ARSessionManager {
     final result = await _channel.invokeMethod<Uint8List>('snapshot');
     return MemoryImage(result!);
   }
+
+  // ==================================================================================
+  // ========================= FACE AR METHODS ========================================
+  // ==================================================================================
+
+  /// Toggle between World AR and Face AR modes
+  /// Returns the new mode as string ('world' or 'face')
+  Future<String> toggleMode() async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>('toggleMode', {});
+      return result?['mode']?.toString() ?? 'world';
+    } catch (e) {
+      print('Error toggling mode: $e');
+      return 'world';
+    }
+  }
+
+  /// Switch to Face AR mode (front camera, face detection)
+  Future<bool> switchToFaceAR({String? modelPath, String? texturePath}) async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>('switchToFaceAR', {
+        'modelPath': modelPath,
+        'texturePath': texturePath,
+      });
+      return result?['switched'] == true;
+    } catch (e) {
+      print('Error switching to Face AR: $e');
+      return false;
+    }
+  }
+
+  /// Switch to World AR mode (back camera, plane detection)
+  Future<bool> switchToWorldAR() async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>('switchToWorldAR', {});
+      return result?['switched'] == true;
+    } catch (e) {
+      print('Error switching to World AR: $e');
+      return false;
+    }
+  }
+
+  /// Get current AR mode
+  Future<String> getCurrentMode() async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>('getCurrentMode', {});
+      return result?['mode']?.toString() ?? 'world';
+    } catch (e) {
+      return 'world';
+    }
+  }
+
+  /// Set the 3D model for face filter
+  /// [modelPath] - Path to the GLB model in Flutter assets (e.g., 'assets/models/fox.glb')
+  /// [texturePath] - Optional texture path
+  Future<bool> setFaceModel({required String modelPath, String? texturePath}) async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>('setFaceModel', {
+        'modelPath': modelPath,
+        'texturePath': texturePath,
+      });
+      return result?['success'] == true;
+    } catch (e) {
+      print('Error setting face model: $e');
+      return false;
+    }
+  }
+
+  /// Clear the current face model (remove filter)
+  Future<bool> clearFaceModel() async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>('clearFaceModel', {});
+      return result?['success'] == true;
+    } catch (e) {
+      print('Error clearing face model: $e');
+      return false;
+    }
+  }
+
+  /// Check if Face AR is supported on this device
+  Future<bool> isFaceARSupported() async {
+    try {
+      final result = await _channel.invokeMethod<bool>('isFaceARSupported', {});
+      return result ?? false;
+    } catch (e) {
+      print('Error checking Face AR support: $e');
+      return false;
+    }
+  }
+
+  // ==================================================================================
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:flutter/services.dart';
 import '../models/ar_state.dart';
+import '../models/ar_mode.dart';
 import '../services/ar_service.dart';
 import '../services/photo_service.dart';
 import '../widgets/ar_overlays.dart';
@@ -16,16 +17,27 @@ class ArScreen extends StatefulWidget {
   State<ArScreen> createState() => _ArScreenState();
 }
 
-class _ArScreenState extends State<ArScreen> {
+class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin {
   late final ARState arState;
   late ARService arService;
   late final PhotoService photoService;
   final ScreenshotController screenshotController = ScreenshotController();
 
-  // : État du menu et modèle sélectionné
+  // État du menu et modèles sélectionnés
   bool isModelMenuOpen = false;
-  String currentModelPath = 'assets/models/eva_01_esg.glb';
+  
+  // ========== World AR Model ==========
+  String currentWorldModelPath = 'assets/models/world/eva_01_esg.glb';
   final String reticlePath = 'assets/models/test_reticle.glb';
+  
+  // ========== Face AR Model ==========
+  String currentFaceModelPath = ''; // Vide = aucun filtre
+
+  // ========== FACE AR STATE ==========
+  bool _isSwitchingCamera = false;
+  late AnimationController _switchAnimationController;
+  late Animation<double> _switchAnimation;
+  // ====================================
 
   @override
   void initState() {
@@ -33,32 +45,215 @@ class _ArScreenState extends State<ArScreen> {
     arState = ARState();
     arService = ARService(
         state: arState,
-        modelPath: currentModelPath,
+        modelPath: currentWorldModelPath,
         reticlePath: reticlePath
     );
     photoService = PhotoService(state: arState);
+
+    // Animation pour le switch de caméra
+    _switchAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _switchAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _switchAnimationController, curve: Curves.easeInOut),
+    );
   }
 
-  // : Méthode pour changer de modèle
+  // ==================================================================================
+  // ========================= SÉLECTION DE MODÈLE ====================================
+  // ==================================================================================
+
+  /// Méthode appelée quand un modèle est sélectionné (World AR ou Face AR)
   void _onModelSelected(Model3D model) {
-    setState(() {
-      currentModelPath = model.path;
-    });
-
-    arService.updateModelPath(currentModelPath);
-
     HapticFeedback.lightImpact();
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Modèle "${model.name}" sélectionné'),
-          duration: const Duration(seconds: 2),
-          backgroundColor: Colors.blue,
-        ),
-      );
+    if (arState.isWorldMode) {
+      // ========== World AR : Mise à jour du modèle 3D ==========
+      setState(() {
+        currentWorldModelPath = model.path;
+      });
+      arService.updateModelPath(currentWorldModelPath);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.view_in_ar, color: Colors.white),
+                const SizedBox(width: 12),
+                Text('Modèle "${model.name}" sélectionné'),
+              ],
+            ),
+            duration: const Duration(seconds: 2),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      }
+    } else {
+      // ========== Face AR : Mise à jour du filtre facial ==========
+      setState(() {
+        currentFaceModelPath = model.path;
+      });
+      
+      // Appliquer le filtre immédiatement
+      _applyFaceFilter(model);
     }
   }
+
+  /// Applique un filtre facial
+  Future<void> _applyFaceFilter(Model3D model) async {
+    try {
+      if (model.path.isEmpty) {
+        // Supprimer le filtre actuel
+        await arService.clearFaceModel();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.face, color: Colors.white),
+                  SizedBox(width: 12),
+                  Text('Filtre supprimé'),
+                ],
+              ),
+              duration: const Duration(seconds: 2),
+              backgroundColor: Colors.grey[700],
+            ),
+          );
+        }
+      } else {
+        // Appliquer le nouveau filtre
+        final success = await arService.setFaceModel(model.path);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(
+                    success ? Icons.face_retouching_natural : Icons.error_outline,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    success 
+                      ? 'Filtre "${model.name}" appliqué'
+                      : 'Erreur lors de l\'application du filtre',
+                  ),
+                ],
+              ),
+              duration: const Duration(seconds: 2),
+              backgroundColor: success ? Colors.purple : Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error applying face filter: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // ==================================================================================
+  // ========================= MÉTHODES SWITCH CAMÉRA =================================
+  // ==================================================================================
+
+  /// Bascule entre les modes World AR et Face AR
+  Future<void> _toggleCameraMode() async {
+    if (_isSwitchingCamera) return;
+
+    setState(() {
+      _isSwitchingCamera = true;
+    });
+
+    // Animation de transition
+    await _switchAnimationController.forward();
+
+    HapticFeedback.mediumImpact();
+
+    try {
+      final success = await arService.toggleMode();
+
+      if (success && mounted) {
+        final newMode = arService.currentMode;
+        
+        // Si on passe en Face AR et qu'un filtre était sélectionné, l'appliquer
+        if (newMode == ArMode.face && currentFaceModelPath.isNotEmpty) {
+          await arService.setFaceModel(currentFaceModelPath);
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  newMode == ArMode.face ? Icons.face : Icons.view_in_ar,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  newMode == ArMode.face 
+                    ? 'Mode Face AR activé' 
+                    : 'Mode World AR activé',
+                ),
+              ],
+            ),
+            duration: const Duration(seconds: 2),
+            backgroundColor: newMode == ArMode.face ? Colors.purple : Colors.blue,
+          ),
+        );
+      } else if (mounted) {
+        // Face AR non supporté - afficher un message informatif
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.white),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Face AR non disponible sur cet appareil',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            duration: Duration(seconds: 3),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error toggling camera mode: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      await _switchAnimationController.reverse();
+      if (mounted) {
+        setState(() {
+          _isSwitchingCamera = false;
+        });
+      }
+    }
+  }
+
+  // ==================================================================================
+  // ========================= BUILD =================================================
+  // ==================================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -71,48 +266,98 @@ class _ArScreenState extends State<ArScreen> {
             controller: screenshotController,
             child: Stack(
               children: [
+                // Vue AR
                 ARView(
                   onARViewCreated: (sessionManager, objectManager, anchorManager, locationManager) {
                     arService.onARViewCreated(sessionManager, objectManager, anchorManager);
                   },
-                  planeDetectionConfig: PlaneDetectionConfig.horizontal,
+                  planeDetectionConfig: arState.isWorldMode 
+                    ? PlaneDetectionConfig.horizontal 
+                    : PlaneDetectionConfig.none,
                 ),
 
-                AROverlays(
-                  state: arState,
-                  onClose: () => Navigator.pop(context),
-                  onTakePhoto: () async {
-                    try {
-                      await photoService.takeAndSavePhoto(screenshotController, context);
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                // Overlay de transition lors du switch
+                if (_isSwitchingCamera)
+                  AnimatedBuilder(
+                    animation: _switchAnimation,
+                    builder: (context, child) {
+                      return Container(
+                        color: Colors.black.withValues(alpha: _switchAnimation.value * 0.8),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const CircularProgressIndicator(
+                                color: Colors.white,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Changement de caméra...',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: _switchAnimation.value),
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                // Overlays AR (différents selon le mode)
+                if (!_isSwitchingCamera)
+                  AROverlays(
+                    state: arState,
+                    onClose: () => Navigator.pop(context),
+                    onTakePhoto: () async {
+                      try {
+                        await photoService.takeAndSavePhoto(screenshotController, context);
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                                content: Text('Erreur: $e'),
-                                backgroundColor: Colors.red
+                              content: Text('Erreur: $e'),
+                              backgroundColor: Colors.red
                             )
-                        );
+                          );
+                        }
                       }
-                    }
-                  },
-                  onDelete: () async {
-                    await arService.removeAllModels();
-                  },
-                  onPlaceModel: () async {
-                    await arService.placeModelAtReticle();
-                    HapticFeedback.mediumImpact();
-                  },
-                  onOpenModelMenu: () { //
-                    setState(() {
-                      isModelMenuOpen = true;
-                    });
-                  },
-                  onRotateReticle: (angle) async {
-                    await arService.rotateReticle(angle);
-                  },
-                ),
+                    },
+                    onDelete: () async {
+                      if (arState.isWorldMode) {
+                        await arService.removeAllModels();
+                      } else {
+                        // En mode Face AR, supprimer le filtre
+                        await arService.clearFaceModel();
+                        setState(() {
+                          currentFaceModelPath = '';
+                        });
+                      }
+                    },
+                    onPlaceModel: () async {
+                      if (arState.isWorldMode) {
+                        await arService.placeModelAtReticle();
+                        HapticFeedback.mediumImpact();
+                      }
+                    },
+                    onOpenModelMenu: () {
+                      setState(() {
+                        isModelMenuOpen = true;
+                      });
+                    },
+                    onRotateReticle: (angle) async {
+                      if (arState.isWorldMode) {
+                        await arService.rotateReticle(angle);
+                      }
+                    },
+                    // ========== Callback pour switch caméra ==========
+                    onSwitchCamera: _toggleCameraMode,
+                    isSwitchingCamera: _isSwitchingCamera,
+                    // ==================================================
+                  ),
 
-                // : Menu de sélection des modèles
+                // ========== Menu de sélection des modèles (World AR ET Face AR) ==========
                 ModelSelectorMenu(
                   isOpen: isModelMenuOpen,
                   onClose: () {
@@ -121,8 +366,14 @@ class _ArScreenState extends State<ArScreen> {
                     });
                   },
                   onModelSelected: _onModelSelected,
-                  currentModelPath: currentModelPath,
+                  // Passer le bon path selon le mode
+                  currentModelPath: arState.isWorldMode 
+                    ? currentWorldModelPath 
+                    : currentFaceModelPath,
+                  // Passer le mode actuel pour afficher les bons modèles
+                  isWorldMode: arState.isWorldMode,
                 ),
+                // =========================================================================
               ],
             ),
           );
@@ -133,6 +384,7 @@ class _ArScreenState extends State<ArScreen> {
 
   @override
   void dispose() {
+    _switchAnimationController.dispose();
     arService.dispose();
     super.dispose();
   }

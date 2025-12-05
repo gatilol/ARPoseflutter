@@ -145,4 +145,27 @@ class ARObjectManager {
   removeNode(ARNode node) {
     _channel.invokeMethod<String>('removeNode', {'name': node.name});
   }
+
+  // ========== Face AR Methods ==========
+
+  /// Add a node attached to a detected face
+  /// [node] the ARNode to attach
+  /// [region] where on the face to attach: 'nose', 'forehead', 'leftEye', 'rightEye'
+  /// 
+  /// Must be in Face AR mode to use this method.
+  /// Returns the node name if successful, null otherwise.
+  Future<String?> addNodeToFace(ARNode node, {String region = 'nose'}) async {
+    try {
+      final nodeMap = node.toMap();
+      nodeMap['region'] = region;
+      
+      final result = await _channel.invokeMethod<bool>('addNodeToFace', nodeMap);
+      return result == true ? node.name : null;
+    } catch (e) {
+      print('Error adding node to face: $e');
+      return null;
+    }
+  }
+
+  // ========================================
 }
