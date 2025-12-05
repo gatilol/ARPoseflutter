@@ -1,6 +1,6 @@
 truc a faire :
 
-implementation des visage pour mode purikura
+implementation des visage pour mode purikura test model
 implemetation de l'espace pour meilleur immersion
 
 apres:
