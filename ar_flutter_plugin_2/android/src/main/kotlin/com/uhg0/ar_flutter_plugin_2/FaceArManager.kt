@@ -1,6 +1,8 @@
 package com.uhg0.ar_flutter_plugin_2
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Log
 import com.google.android.filament.Box
 import com.google.android.filament.Engine
@@ -8,7 +10,10 @@ import com.google.android.filament.EntityManager
 import com.google.android.filament.IndexBuffer
 import com.google.android.filament.MaterialInstance
 import com.google.android.filament.RenderableManager
+import com.google.android.filament.Texture
+import com.google.android.filament.TextureSampler
 import com.google.android.filament.VertexBuffer
+import com.google.android.filament.android.TextureHelper
 import com.google.ar.core.AugmentedFace
 import com.google.ar.core.CameraConfig
 import com.google.ar.core.CameraConfigFilter
@@ -27,7 +32,9 @@ import io.github.sceneview.math.colorOf
 import io.github.sceneview.model.ModelInstance
 import io.github.sceneview.node.ModelNode
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -44,6 +51,7 @@ import androidx.lifecycle.Lifecycle
  * - Le rendu du mesh facial (FaceMeshRenderer)
  * - Le tracking des visages
  * - Les modèles 3D attachés aux visages (filtres)
+ * - Les textures de maquillage (makeup)
  * - Les notifications vers Flutter
  */
 class FaceArManager(
@@ -65,11 +73,14 @@ class FaceArManager(
     private var isFaceDetected = false
     private var lastFacePose: Map<String, Any>? = null
     private var faceMeshRenderer: FaceMeshRenderer? = null
-    private var currentFaceFilterColor: Int = 0x8000FF00.toInt()
+    private var currentFaceFilterColor: Int = 0x00000000  // Transparent par défaut
     private var faceFilterModelInstance: ModelInstance? = null
     private var faceFilterNode: ModelNode? = null
     private var isSessionPaused = false
     private var lastFaceLogTime = 0L
+    
+    // ========== Makeup Texture ==========
+    private var currentMakeupTexturePath: String? = null
     
     // Référence à la sceneView courante
     private var sceneView: ARSceneView? = null
@@ -77,6 +88,7 @@ class FaceArManager(
     // ========== FaceMeshRenderer - Inner Class ==========
     /**
      * FaceMeshRenderer - Renders the ARCore face mesh using Filament
+     * Supports both solid colors and PNG textures for makeup
      */
     inner class FaceMeshRenderer(
         private val engine: Engine,
@@ -97,6 +109,10 @@ class FaceArManager(
         private var cachedUVs: FloatBuffer? = null
         private var cachedIndices: ShortBuffer? = null
         
+        // Texture support
+        private var currentTexture: Texture? = null
+        private var isUsingTexture: Boolean = false
+        
         private val positionBuffer: FloatBuffer = ByteBuffer
             .allocateDirect(VERTEX_COUNT * POSITION_SIZE * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
@@ -108,7 +124,7 @@ class FaceArManager(
             .asFloatBuffer()
         
         private var isInitialized = false
-        private var isVisible = false
+        private var isVisible = false  // Hidden by default
 
         fun initialize(face: AugmentedFace, color: Int) {
             if (isInitialized) return
@@ -126,10 +142,51 @@ class FaceArManager(
                 createRenderable()
                 
                 isInitialized = true
+                isVisible = true
                 Log.d(MESH_TAG, "✅ FaceMeshRenderer initialized successfully!")
                 
             } catch (e: Exception) {
                 Log.e(MESH_TAG, "❌ Failed to initialize FaceMeshRenderer", e)
+                e.printStackTrace()
+                destroy()
+            }
+        }
+        
+        /**
+         * Initialize with a texture instead of color
+         */
+        fun initializeWithTexture(face: AugmentedFace, texturePath: String) {
+            if (isInitialized) return
+            
+            try {
+                Log.d(MESH_TAG, "🎭 Initializing FaceMeshRenderer with texture...")
+                Log.d(MESH_TAG, "   Texture: $texturePath")
+                Log.d(MESH_TAG, "   Vertices: ${face.meshVertices.capacity() / 3}")
+                Log.d(MESH_TAG, "   Indices: ${face.meshTriangleIndices.capacity()}")
+                
+                cacheStaticData(face)
+                createVertexBuffer()
+                createIndexBuffer()
+                
+                // Load texture and create material
+                val bitmap = loadBitmapFromAssets(texturePath)
+                if (bitmap != null) {
+                    createMaterialWithTexture(bitmap)
+                    bitmap.recycle()
+                    isUsingTexture = true
+                } else {
+                    Log.w(MESH_TAG, "⚠️ Failed to load texture, falling back to color")
+                    createMaterial(currentFaceFilterColor)
+                }
+                
+                createRenderable()
+                
+                isInitialized = true
+                isVisible = true
+                Log.d(MESH_TAG, "✅ FaceMeshRenderer initialized with texture successfully!")
+                
+            } catch (e: Exception) {
+                Log.e(MESH_TAG, "❌ Failed to initialize FaceMeshRenderer with texture", e)
                 e.printStackTrace()
                 destroy()
             }
@@ -216,7 +273,74 @@ class FaceArManager(
                 reflectance = 0f
             )
             
+            isUsingTexture = false
             Log.d(MESH_TAG, "🎨 Material created with color ARGB($a, $r, $g, $b)")
+        }
+        
+        /**
+         * Create a material with a texture for makeup
+         * Uses MaterialLoader.createTextureInstance which has proper texture support
+         */
+        private fun createMaterialWithTexture(bitmap: Bitmap) {
+            try {
+                // Destroy previous texture if exists
+                currentTexture?.let {
+                    try { engine.destroyTexture(it) } catch (e: Exception) {}
+                }
+                
+                // Create Filament texture from bitmap
+                currentTexture = Texture.Builder()
+                    .width(bitmap.width)
+                    .height(bitmap.height)
+                    .sampler(Texture.Sampler.SAMPLER_2D)
+                    .format(Texture.InternalFormat.SRGB8_A8)
+                    .levels(0xff)  // Let Filament figure out mip levels
+                    .build(engine)
+                
+                // Upload bitmap to texture
+                TextureHelper.setBitmap(engine, currentTexture!!, 0, bitmap)
+                currentTexture!!.generateMipmaps(engine)
+                
+                // Create material with texture using MaterialLoader.createTextureInstance
+                // isOpaque = false for transparent makeup textures
+                materialInstance = materialLoader.createTextureInstance(
+                    texture = currentTexture!!,
+                    isOpaque = false
+                )
+                
+                isUsingTexture = true
+                Log.d(MESH_TAG, "🎨 Material created with texture (${bitmap.width}x${bitmap.height})")
+                
+            } catch (e: Exception) {
+                Log.e(MESH_TAG, "❌ Failed to create material with texture", e)
+                e.printStackTrace()
+                // Fallback to color
+                createMaterial(currentFaceFilterColor)
+            }
+        }
+        
+        /**
+         * Load bitmap from Flutter assets
+         */
+        private fun loadBitmapFromAssets(assetPath: String): Bitmap? {
+            return try {
+                val loader = FlutterInjector.instance().flutterLoader()
+                val key = loader.getLookupKeyForAsset(assetPath)
+                
+                Log.d(MESH_TAG, "📁 Loading texture from: $key")
+                
+                val assetManager = context.assets
+                val inputStream = assetManager.open(key)
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                inputStream.close()
+                
+                Log.d(MESH_TAG, "✅ Texture loaded: ${bitmap?.width}x${bitmap?.height}")
+                bitmap
+                
+            } catch (e: Exception) {
+                Log.e(MESH_TAG, "❌ Failed to load texture from assets: $assetPath", e)
+                null
+            }
         }
 
         private fun createRenderable() {
@@ -232,13 +356,19 @@ class FaceArManager(
                 .build(engine, entity)
             
             scene.addEntity(entity)
+            isVisible = true
             
             Log.d(MESH_TAG, "🎭 Renderable entity created and added to scene")
         }
 
         fun update(face: AugmentedFace) {
             if (!isInitialized) {
-                initialize(face, currentFaceFilterColor)
+                // Initialize with texture if available, otherwise with color
+                if (currentMakeupTexturePath != null) {
+                    initializeWithTexture(face, currentMakeupTexturePath!!)
+                } else {
+                    initialize(face, currentFaceFilterColor)
+                }
                 return
             }
             
@@ -335,6 +465,7 @@ class FaceArManager(
                     scene.removeEntity(entity)
                 }
             }
+            Log.d(MESH_TAG, "👁️ Visibility set to: $visible")
         }
 
         fun setColor(color: Int) {
@@ -358,7 +489,51 @@ class FaceArManager(
                 }
             }
             
+            isUsingTexture = false
             Log.d(MESH_TAG, "🎨 Color updated to ARGB($a, $r, $g, $b)")
+        }
+        
+        /**
+         * Set a texture for makeup
+         */
+        fun setTexture(texturePath: String) {
+            try {
+                val bitmap = loadBitmapFromAssets(texturePath)
+                if (bitmap != null) {
+                    createMaterialWithTexture(bitmap)
+                    bitmap.recycle()
+                    
+                    // Update the renderable with new material
+                    if (entity != 0 && materialInstance != null) {
+                        val renderableManager = engine.renderableManager
+                        val instance = renderableManager.getInstance(entity)
+                        if (instance != 0) {
+                            renderableManager.setMaterialInstanceAt(instance, 0, materialInstance!!)
+                        }
+                    }
+                    
+                    Log.d(MESH_TAG, "🎨 Texture updated to: $texturePath")
+                } else {
+                    Log.e(MESH_TAG, "❌ Failed to load texture: $texturePath")
+                }
+            } catch (e: Exception) {
+                Log.e(MESH_TAG, "❌ Error setting texture", e)
+            }
+        }
+        
+        /**
+         * Clear texture and revert to color
+         */
+        fun clearTexture() {
+            currentTexture?.let {
+                try { engine.destroyTexture(it) } catch (e: Exception) {}
+            }
+            currentTexture = null
+            isUsingTexture = false
+            
+            // Revert to color
+            setColor(currentFaceFilterColor)
+            Log.d(MESH_TAG, "🧹 Texture cleared, reverted to color")
         }
 
         fun destroy() {
@@ -382,10 +557,16 @@ class FaceArManager(
                     indexBuffer = null
                 }
                 
+                currentTexture?.let {
+                    try { engine.destroyTexture(it) } catch (e: Exception) {}
+                    currentTexture = null
+                }
+                
                 materialInstance = null
                 cachedUVs = null
                 cachedIndices = null
                 isInitialized = false
+                isUsingTexture = false
                 
                 Log.d(MESH_TAG, "🧹 FaceMeshRenderer destroyed")
                 
@@ -538,7 +719,7 @@ class FaceArManager(
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastFaceLogTime > 2000) {
             lastFaceLogTime = currentTime
-            Log.d(TAG, "🔍 Face AR: All faces=${allFaces.size}, MeshRenderer=${faceMeshRenderer != null}")
+            Log.d(TAG, "🔍 Face AR: All faces=${allFaces.size}, MeshRenderer=${faceMeshRenderer != null}, Model=${faceModelPath}, Texture=${currentMakeupTexturePath}")
         }
         
         var hasTrackingFace = false
@@ -555,6 +736,7 @@ class FaceArManager(
                         notifyFaceDetected(true)
                     }
                     
+                    // Create FaceMeshRenderer if needed
                     if (faceMeshRenderer == null) {
                         try {
                             val engine = sv.engine
@@ -568,8 +750,10 @@ class FaceArManager(
                         }
                     }
                     
+                    // Update mesh (will initialize with texture or color on first call)
                     faceMeshRenderer?.update(face)
                     
+                    // Handle 3D face filter model
                     if (faceFilterNode == null && faceFilterModelInstance != null) {
                         try {
                             faceFilterNode = ModelNode(
@@ -586,6 +770,7 @@ class FaceArManager(
                         }
                     }
                     
+                    // Update 3D face filter position
                     faceFilterNode?.let { node ->
                         val centerPose = face.centerPose
                         
@@ -600,6 +785,10 @@ class FaceArManager(
                         node.rotation = rotation
                     }
                     
+                    // Update face nodes
+                    updateFaceNodes(face)
+                    
+                    // Update pose for Flutter
                     val centerPose = face.centerPose
                     val poseData = mapOf(
                         "position" to mapOf(
@@ -612,44 +801,35 @@ class FaceArManager(
                             "y" to centerPose.rotationQuaternion[1].toDouble(),
                             "z" to centerPose.rotationQuaternion[2].toDouble(),
                             "w" to centerPose.rotationQuaternion[3].toDouble()
-                        ),
-                        "faceId" to faceId
+                        )
                     )
                     
                     if (lastFacePose != poseData) {
                         lastFacePose = poseData
                         notifyFacePoseUpdate(poseData)
                     }
-                    
-                    updateFaceNodes(face)
                 }
+                
+                TrackingState.PAUSED -> {
+                    // Face temporarily lost
+                }
+                
                 TrackingState.STOPPED -> {
                     removeFaceNode(faceId)
                 }
-                else -> {}
             }
         }
         
+        // No face tracked anymore
         if (!hasTrackingFace && isFaceDetected) {
             isFaceDetected = false
             Log.d(TAG, "👤 Face lost")
             notifyFaceDetected(false)
-            
-            faceMeshRenderer?.destroy()
-            faceMeshRenderer = null
-            
-            faceFilterNode?.let { node ->
-                sv.removeChildNode(node)
-                node.destroy()
-                Log.d(TAG, "🦊 Face filter removed")
-            }
-            faceFilterNode = null
         }
     }
 
     private fun updateFaceNodes(face: AugmentedFace) {
-        val faceId = face.hashCode()
-        faceNodesMap[faceId]?.let { node ->
+        for ((_, node) in faceNodesMap) {
             val centerPose = face.centerPose
             node.position = ScenePosition(
                 x = centerPose.tx(),
@@ -804,6 +984,7 @@ class FaceArManager(
             
             currentFaceFilterColor = colorValue.toInt()
             faceMeshRenderer?.setColor(currentFaceFilterColor)
+            faceMeshRenderer?.setVisible(true)  // Show mesh when color is set
             
             Log.d(TAG, "🎨 Face filter color set: ${String.format("#%08X", currentFaceFilterColor)}")
             result.success(mapOf("success" to true))
@@ -853,6 +1034,7 @@ class FaceArManager(
         
         isFaceDetected = false
         lastFacePose = null
+        currentMakeupTexturePath = null
         
         Log.d(TAG, "🧹 FaceArManager cleaned up")
     }
@@ -869,6 +1051,64 @@ class FaceArManager(
         faceModelPath = null
         
         Log.d(TAG, "🧹 Face model cleared")
+    }
+
+    fun handleClearFaceModel(result: MethodChannel.Result) {
+        try {
+            clearFaceModel()
+            result.success(mapOf("success" to true))
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error clearing face model", e)
+            result.error("CLEAR_FACE_MODEL_ERROR", e.message, null)
+        }
+    }
+
+    // ========== Makeup Texture Handlers ==========
+    
+    /**
+     * Set a makeup texture (PNG) on the face mesh
+     */
+    fun handleSetFaceMakeupTexture(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            val texturePath = call.argument<String>("texturePath")
+            if (texturePath == null) {
+                result.error("INVALID_ARGUMENT", "Texture path is required", null)
+                return
+            }
+            
+            Log.d(TAG, "💄 Setting makeup texture: $texturePath")
+            
+            currentMakeupTexturePath = texturePath
+            
+            // If mesh renderer exists, update texture immediately
+            faceMeshRenderer?.setTexture(texturePath)
+            faceMeshRenderer?.setVisible(true)
+            
+            result.success(mapOf("success" to true))
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error setting makeup texture", e)
+            result.error("SET_MAKEUP_TEXTURE_ERROR", e.message, null)
+        }
+    }
+    
+    /**
+     * Clear makeup texture and hide the mesh
+     */
+    fun handleClearFaceMakeupTexture(result: MethodChannel.Result) {
+        try {
+            Log.d(TAG, "🧹 Clearing makeup texture")
+            
+            currentMakeupTexturePath = null
+            faceMeshRenderer?.clearTexture()
+            faceMeshRenderer?.setVisible(false)
+            
+            result.success(mapOf("success" to true))
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error clearing makeup texture", e)
+            result.error("CLEAR_MAKEUP_TEXTURE_ERROR", e.message, null)
+        }
     }
 
     // ========== Notifications ==========

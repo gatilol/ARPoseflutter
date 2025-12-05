@@ -335,4 +335,74 @@ class ARSessionManager {
   }
 
   // ==================================================================================
+  // ========================= FACE MAKEUP TEXTURE METHODS ============================
+  // ==================================================================================
+
+  /// Set a makeup texture on the face mesh
+  /// [texturePath] - Path to PNG texture in Flutter assets (e.g., 'assets/models/face/makeup/freckles.png')
+  /// The texture must be created using the canonical_face.png UV template
+  /// Returns true if successful
+  Future<bool> setFaceMakeupTexture(String texturePath) async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>('setFaceMakeupTexture', {
+        'texturePath': texturePath,
+      });
+      return result?['success'] == true;
+    } catch (e) {
+      print('Error setting face makeup texture: $e');
+      return false;
+    }
+  }
+
+  /// Clear the current makeup texture from face mesh
+  /// Returns to default color-based rendering
+  Future<bool> clearFaceMakeupTexture() async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>('clearFaceMakeupTexture', {});
+      return result?['success'] == true;
+    } catch (e) {
+      print('Error clearing face makeup texture: $e');
+      return false;
+    }
+  }
+
+  /// Set the face filter color (for solid color face mesh)
+  /// [r], [g], [b] - RGB values (0.0 to 1.0)
+  /// [a] - Alpha/opacity (0.0 to 1.0)
+  /// Note: This clears any makeup texture and switches to color mode
+  Future<bool> setFaceFilterColor({
+    required double r,
+    required double g,
+    required double b,
+    double a = 0.5,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>('setFaceFilterColor', {
+        'r': r,
+        'g': g,
+        'b': b,
+        'a': a,
+      });
+      return result?['success'] == true;
+    } catch (e) {
+      print('Error setting face filter color: $e');
+      return false;
+    }
+  }
+
+  /// Set the visibility of the face filter/mesh
+  /// [visible] - true to show, false to hide
+  Future<bool> setFaceFilterVisible(bool visible) async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>('setFaceFilterVisible', {
+        'visible': visible,
+      });
+      return result?['success'] == true;
+    } catch (e) {
+      print('Error setting face filter visibility: $e');
+      return false;
+    }
+  }
+
+  // ==================================================================================
 }

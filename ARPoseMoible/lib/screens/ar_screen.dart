@@ -30,8 +30,9 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
   String currentWorldModelPath = 'assets/models/world/eva_01_esg.glb';
   final String reticlePath = 'assets/models/test_reticle.glb';
   
-  // ========== Face AR Model ==========
-  String currentFaceModelPath = ''; // Vide = aucun filtre
+  // ========== Face AR Filter ==========
+  String currentFaceFilterPath = '';
+  FaceFilterType currentFaceFilterType = FaceFilterType.none;
 
   // ========== FACE AR STATE ==========
   bool _isSwitchingCamera = false;
@@ -93,7 +94,8 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
     } else {
       // ========== Face AR : Mise à jour du filtre facial ==========
       setState(() {
-        currentFaceModelPath = model.path;
+        currentFaceFilterPath = model.path;
+        currentFaceFilterType = model.filterType;
       });
       
       // Appliquer le filtre immédiatement
@@ -101,53 +103,39 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
     }
   }
 
-  /// Applique un filtre facial
+  /// Applique un filtre facial selon son type (none, model3D, makeup)
   Future<void> _applyFaceFilter(Model3D model) async {
     try {
-      if (model.path.isEmpty) {
-        // Supprimer le filtre actuel
-        await arService.clearFaceModel();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Row(
-                children: [
-                  Icon(Icons.face, color: Colors.white),
-                  SizedBox(width: 12),
-                  Text('Filtre supprimé'),
-                ],
-              ),
-              duration: const Duration(seconds: 2),
-              backgroundColor: Colors.grey[700],
-            ),
+      switch (model.filterType) {
+        case FaceFilterType.none:
+          // Supprimer tous les filtres
+          await _clearAllFaceFilters();
+          _showFilterSnackBar('Filtre supprimé', Icons.face, Colors.grey);
+          break;
+          
+        case FaceFilterType.model3D:
+          // D'abord nettoyer la texture si présente
+          await arService.sessionManager?.clearFaceMakeupTexture();
+          // Puis appliquer le modèle 3D
+          final success = await arService.setFaceModel(model.path);
+          _showFilterSnackBar(
+            success ? 'Filtre "${model.name}" appliqué' : 'Erreur lors de l\'application',
+            success ? Icons.view_in_ar : Icons.error_outline,
+            success ? Colors.purple : Colors.red,
           );
-        }
-      } else {
-        // Appliquer le nouveau filtre
-        final success = await arService.setFaceModel(model.path);
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  Icon(
-                    success ? Icons.face_retouching_natural : Icons.error_outline,
-                    color: Colors.white,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    success 
-                      ? 'Filtre "${model.name}" appliqué'
-                      : 'Erreur lors de l\'application du filtre',
-                  ),
-                ],
-              ),
-              duration: const Duration(seconds: 2),
-              backgroundColor: success ? Colors.purple : Colors.red,
-            ),
+          break;
+          
+        case FaceFilterType.makeup:
+          // D'abord nettoyer le modèle 3D si présent
+          await arService.clearFaceModel();
+          // Puis appliquer la texture makeup
+          final success = await arService.sessionManager?.setFaceMakeupTexture(model.path) ?? false;
+          _showFilterSnackBar(
+            success ? 'Maquillage "${model.name}" appliqué' : 'Erreur lors de l\'application',
+            success ? Icons.brush : Icons.error_outline,
+            success ? Colors.pink : Colors.red,
           );
-        }
+          break;
       }
     } catch (e) {
       debugPrint('Error applying face filter: $e');
@@ -160,6 +148,34 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
         );
       }
     }
+  }
+
+  /// Supprime tous les filtres faciaux (modèle 3D + texture)
+  Future<void> _clearAllFaceFilters() async {
+    await arService.clearFaceModel();
+    await arService.sessionManager?.clearFaceMakeupTexture();
+    setState(() {
+      currentFaceFilterPath = '';
+      currentFaceFilterType = FaceFilterType.none;
+    });
+  }
+
+  /// Affiche un SnackBar pour les filtres
+  void _showFilterSnackBar(String message, IconData icon, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(icon, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        duration: const Duration(seconds: 2),
+        backgroundColor: color,
+      ),
+    );
   }
 
   // ==================================================================================
@@ -185,9 +201,14 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
       if (success && mounted) {
         final newMode = arService.currentMode;
         
-        // Si on passe en Face AR et qu'un filtre était sélectionné, l'appliquer
-        if (newMode == ArMode.face && currentFaceModelPath.isNotEmpty) {
-          await arService.setFaceModel(currentFaceModelPath);
+        // Si on passe en Face AR et qu'un filtre était sélectionné, le réappliquer
+        if (newMode == ArMode.face && currentFaceFilterPath.isNotEmpty) {
+          // Trouver le model correspondant pour avoir le type
+          final model = ModelSelectorMenu.faceModels.firstWhere(
+            (m) => m.path == currentFaceFilterPath,
+            orElse: () => ModelSelectorMenu.faceModels.first,
+          );
+          await _applyFaceFilter(model);
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
@@ -211,7 +232,6 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
           ),
         );
       } else if (mounted) {
-        // Face AR non supporté - afficher un message informatif
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Row(
@@ -305,7 +325,7 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                     },
                   ),
 
-                // Overlays AR (différents selon le mode)
+                // Overlays AR
                 if (!_isSwitchingCamera)
                   AROverlays(
                     state: arState,
@@ -328,11 +348,8 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                       if (arState.isWorldMode) {
                         await arService.removeAllModels();
                       } else {
-                        // En mode Face AR, supprimer le filtre
-                        await arService.clearFaceModel();
-                        setState(() {
-                          currentFaceModelPath = '';
-                        });
+                        // En mode Face AR, supprimer tous les filtres
+                        await _clearAllFaceFilters();
                       }
                     },
                     onPlaceModel: () async {
@@ -351,13 +368,11 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                         await arService.rotateReticle(angle);
                       }
                     },
-                    // ========== Callback pour switch caméra ==========
                     onSwitchCamera: _toggleCameraMode,
                     isSwitchingCamera: _isSwitchingCamera,
-                    // ==================================================
                   ),
 
-                // ========== Menu de sélection des modèles (World AR ET Face AR) ==========
+                // Menu de sélection des modèles
                 ModelSelectorMenu(
                   isOpen: isModelMenuOpen,
                   onClose: () {
@@ -366,14 +381,11 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                     });
                   },
                   onModelSelected: _onModelSelected,
-                  // Passer le bon path selon le mode
                   currentModelPath: arState.isWorldMode 
                     ? currentWorldModelPath 
-                    : currentFaceModelPath,
-                  // Passer le mode actuel pour afficher les bons modèles
+                    : currentFaceFilterPath,
                   isWorldMode: arState.isWorldMode,
                 ),
-                // =========================================================================
               ],
             ),
           );

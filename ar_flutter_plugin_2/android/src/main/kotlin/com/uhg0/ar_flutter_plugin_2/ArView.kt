@@ -121,8 +121,12 @@ class ArView(
                 }
                 "getCurrentMode" -> faceArManager.handleGetCurrentMode(result)
                 "setFaceModel" -> faceArManager.handleSetFaceModel(call, result)
+                "clearFaceModel" -> faceArManager.handleClearFaceModel(result)
                 "setFaceFilterColor" -> faceArManager.handleSetFaceFilterColor(call, result)
                 "setFaceFilterVisible" -> faceArManager.handleSetFaceFilterVisible(call, result)
+                // ========== Makeup Texture Methods ==========
+                "setFaceMakeupTexture" -> faceArManager.handleSetFaceMakeupTexture(call, result)
+                "clearFaceMakeupTexture" -> faceArManager.handleClearFaceMakeupTexture(result)
                 // =====================================
                 else -> result.notImplemented()
             }

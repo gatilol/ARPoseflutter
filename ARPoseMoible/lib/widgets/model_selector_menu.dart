@@ -1,16 +1,24 @@
 import 'package:flutter/material.dart';
 
+enum FaceFilterType {
+  none,      // Aucun filtre
+  model3D,   // Modèle 3D GLB
+  makeup,    // Texture de maquillage PNG
+}
+
 class Model3D {
   final String name;
   final String path;
   final IconData icon;
   final String? description;
+  final FaceFilterType filterType;
 
   const Model3D({
     required this.name,
     required this.path,
     required this.icon,
     this.description,
+    this.filterType = FaceFilterType.model3D,
   });
 }
 
@@ -19,7 +27,7 @@ class ModelSelectorMenu extends StatelessWidget {
   final VoidCallback onClose;
   final Function(Model3D) onModelSelected;
   final String? currentModelPath;
-  final bool isWorldMode; // ← NOUVEAU : mode actuel
+  final bool isWorldMode;
 
   // ========== Modèles World AR ==========
   static const List<Model3D> worldModels = [
@@ -43,19 +51,45 @@ class ModelSelectorMenu extends StatelessWidget {
     ),
   ];
 
-  // ========== Modèles Face AR ==========
+  // ========== Filtres Face AR ==========
   static const List<Model3D> faceModels = [
+    // === Aucun filtre ===
     Model3D(
       name: 'Aucun filtre',
-      path: '', // Path vide = pas de modèle
+      path: '',
       icon: Icons.face,
       description: 'Votre visage sans effet',
+      filterType: FaceFilterType.none,
     ),
+    // === Modèles 3D ===
     Model3D(
       name: 'Lunettes',
-      path: 'assets/models/face/fox.glb',
+      path: 'assets/models/face/3D/fox.glb',
       icon: Icons.visibility,
       description: 'Lunettes de soleil',
+      filterType: FaceFilterType.model3D,
+    ),
+    // === Maquillages (textures PNG) ===
+    Model3D(
+      name: 'Freckles',
+      path: 'assets/models/face/makeup/freckles.png',
+      icon: Icons.face_retouching_natural,
+      description: 'Taches de rousseur',
+      filterType: FaceFilterType.makeup,
+    ),
+    Model3D(
+      name: 'Face Paint',
+      path: 'assets/models/face/makeup/face.png',
+      icon: Icons.brush,
+      description: 'Peinture faciale',
+      filterType: FaceFilterType.makeup,
+    ),
+    Model3D(
+      name: 'Canonical',
+      path: 'assets/models/face/makeup/canonical_face.png',
+      icon: Icons.grid_on,
+      description: 'Template UV (test)',
+      filterType: FaceFilterType.makeup,
     ),
   ];
 
@@ -64,7 +98,7 @@ class ModelSelectorMenu extends StatelessWidget {
     required this.onClose,
     required this.onModelSelected,
     this.currentModelPath,
-    this.isWorldMode = true, // ← Par défaut World AR
+    this.isWorldMode = true,
     super.key,
   });
 
@@ -106,22 +140,16 @@ class ModelSelectorMenu extends StatelessWidget {
             child: SafeArea(
               child: Column(
                 children: [
-                  // Header - change selon le mode
+                  // Header
                   _buildHeader(),
 
                   // Liste des modèles
                   Expanded(
                     child: currentModels.isEmpty 
                       ? _buildEmptyState()
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          itemCount: currentModels.length,
-                          itemBuilder: (context, index) {
-                            final model = currentModels[index];
-                            final isSelected = currentModelPath == model.path;
-                            return _buildModelItem(model, isSelected);
-                          },
-                        ),
+                      : isWorldMode 
+                        ? _buildSimpleList()
+                        : _buildCategorizedList(),
                   ),
 
                   // Footer info
@@ -135,12 +163,11 @@ class ModelSelectorMenu extends StatelessWidget {
     );
   }
 
-  /// Header du menu - change selon le mode
+  /// Header du menu
   Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        // Couleur de fond selon le mode
         color: isWorldMode 
           ? Colors.blue.withValues(alpha: 0.1)
           : Colors.purple.withValues(alpha: 0.1),
@@ -152,7 +179,6 @@ class ModelSelectorMenu extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Icône selon le mode
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -202,9 +228,84 @@ class ModelSelectorMenu extends StatelessWidget {
     );
   }
 
+  /// Liste simple pour World AR
+  Widget _buildSimpleList() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: currentModels.length,
+      itemBuilder: (context, index) {
+        final model = currentModels[index];
+        final isSelected = currentModelPath == model.path;
+        return _buildModelItem(model, isSelected);
+      },
+    );
+  }
+
+  /// Liste catégorisée pour Face AR
+  Widget _buildCategorizedList() {
+    final noneFilters = faceModels.where((m) => m.filterType == FaceFilterType.none).toList();
+    final modelFilters = faceModels.where((m) => m.filterType == FaceFilterType.model3D).toList();
+    final makeupFilters = faceModels.where((m) => m.filterType == FaceFilterType.makeup).toList();
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        // Section: Aucun filtre
+        if (noneFilters.isNotEmpty) ...[
+          _buildSectionHeader('Aucun filtre', Icons.close),
+          ...noneFilters.map((m) => _buildModelItem(m, currentModelPath == m.path)),
+        ],
+        
+        // Section: Accessoires 3D
+        if (modelFilters.isNotEmpty) ...[
+          _buildSectionHeader('Accessoires 3D', Icons.view_in_ar),
+          ...modelFilters.map((m) => _buildModelItem(m, currentModelPath == m.path)),
+        ],
+        
+        // Section: Maquillage
+        if (makeupFilters.isNotEmpty) ...[
+          _buildSectionHeader('Maquillage', Icons.brush),
+          ...makeupFilters.map((m) => _buildModelItem(m, currentModelPath == m.path)),
+        ],
+      ],
+    );
+  }
+
+  /// Header de section
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.purple.withValues(alpha: 0.7), size: 16),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.7),
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Item de modèle dans la liste
   Widget _buildModelItem(Model3D model, bool isSelected) {
     final accentColor = isWorldMode ? Colors.blue : Colors.purple;
+    
+    // Couleur d'icône selon le type
+    Color iconBgColor;
+    if (isSelected) {
+      iconBgColor = accentColor;
+    } else if (model.filterType == FaceFilterType.makeup) {
+      iconBgColor = Colors.pink.withValues(alpha: 0.3);
+    } else {
+      iconBgColor = Colors.white.withValues(alpha: 0.1);
+    }
     
     return Container(
       margin: const EdgeInsets.symmetric(
@@ -225,9 +326,7 @@ class ModelSelectorMenu extends StatelessWidget {
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: isSelected
-                ? accentColor
-                : Colors.white.withValues(alpha: 0.1),
+            color: iconBgColor,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
@@ -287,15 +386,6 @@ class ModelSelectorMenu extends StatelessWidget {
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.6),
               fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Ajoutez des fichiers .glb dans\nassets/models/${isWorldMode ? "" : "face/"}',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.4),
-              fontSize: 12,
             ),
           ),
         ],
