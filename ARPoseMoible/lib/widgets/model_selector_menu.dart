@@ -26,7 +26,9 @@ class ModelSelectorMenu extends StatelessWidget {
   final bool isOpen;
   final VoidCallback onClose;
   final Function(Model3D) onModelSelected;
+  final Function(FaceFilterType)? onFilterRemoved;  // Nouveau: pour supprimer un filtre
   final String? currentModelPath;
+  final String? currentMakeupPath;
   final bool isWorldMode;
 
   // ========== Modèles World AR ==========
@@ -53,14 +55,6 @@ class ModelSelectorMenu extends StatelessWidget {
 
   // ========== Filtres Face AR ==========
   static const List<Model3D> faceModels = [
-    // === Aucun filtre ===
-    Model3D(
-      name: 'Aucun filtre',
-      path: '',
-      icon: Icons.face,
-      description: 'Votre visage sans effet',
-      filterType: FaceFilterType.none,
-    ),
     // === Modèles 3D ===
     Model3D(
       name: 'Lunettes',
@@ -97,7 +91,9 @@ class ModelSelectorMenu extends StatelessWidget {
     required this.isOpen,
     required this.onClose,
     required this.onModelSelected,
+    this.onFilterRemoved,
     this.currentModelPath,
+    this.currentMakeupPath,
     this.isWorldMode = true,
     super.key,
   });
@@ -243,29 +239,22 @@ class ModelSelectorMenu extends StatelessWidget {
 
   /// Liste catégorisée pour Face AR
   Widget _buildCategorizedList() {
-    final noneFilters = faceModels.where((m) => m.filterType == FaceFilterType.none).toList();
     final modelFilters = faceModels.where((m) => m.filterType == FaceFilterType.model3D).toList();
     final makeupFilters = faceModels.where((m) => m.filterType == FaceFilterType.makeup).toList();
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
-        // Section: Aucun filtre
-        if (noneFilters.isNotEmpty) ...[
-          _buildSectionHeader('Aucun filtre', Icons.close),
-          ...noneFilters.map((m) => _buildModelItem(m, currentModelPath == m.path)),
-        ],
-        
-        // Section: Accessoires 3D
+        // Section: Accessoires 3D - utilise currentModelPath
         if (modelFilters.isNotEmpty) ...[
           _buildSectionHeader('Accessoires 3D', Icons.view_in_ar),
           ...modelFilters.map((m) => _buildModelItem(m, currentModelPath == m.path)),
         ],
         
-        // Section: Maquillage
+        // Section: Maquillage - utilise currentMakeupPath
         if (makeupFilters.isNotEmpty) ...[
           _buildSectionHeader('Maquillage', Icons.brush),
-          ...makeupFilters.map((m) => _buildModelItem(m, currentModelPath == m.path)),
+          ...makeupFilters.map((m) => _buildModelItem(m, currentMakeupPath == m.path)),
         ],
       ],
     );
@@ -353,7 +342,39 @@ class ModelSelectorMenu extends StatelessWidget {
             )
           : null,
         trailing: isSelected
-            ? Icon(Icons.check_circle, color: accentColor)
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_circle, color: accentColor),
+                  // Bouton supprimer uniquement en Face AR
+                  if (!isWorldMode) ...[
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () {
+                        if (onFilterRemoved != null) {
+                          onFilterRemoved!(model.filterType);
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.red.withValues(alpha: 0.5),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.red,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              )
             : const Icon(
                 Icons.arrow_forward_ios,
                 color: Colors.white54,
