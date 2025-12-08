@@ -279,7 +279,7 @@ class FaceArManager(
         
         /**
          * Create a material with a texture for makeup
-         * Uses MaterialLoader.createTextureInstance which has proper texture support
+         * Uses MaterialLoader.createImageInstance for UNLIT rendering (no lighting = no visible facets)
          */
         private fun createMaterialWithTexture(bitmap: Bitmap) {
             try {
@@ -301,15 +301,14 @@ class FaceArManager(
                 TextureHelper.setBitmap(engine, currentTexture!!, 0, bitmap)
                 currentTexture!!.generateMipmaps(engine)
                 
-                // Create material with texture using MaterialLoader.createTextureInstance
-                // isOpaque = false for transparent makeup textures
-                materialInstance = materialLoader.createTextureInstance(
-                    texture = currentTexture!!,
-                    isOpaque = false
+                // Create material with texture using createImageInstance (UNLIT - no lighting)
+                // This prevents the mesh facets from being visible
+                materialInstance = materialLoader.createImageInstance(
+                    imageTexture = currentTexture!!
                 )
                 
                 isUsingTexture = true
-                Log.d(MESH_TAG, "🎨 Material created with texture (${bitmap.width}x${bitmap.height})")
+                Log.d(MESH_TAG, "🎨 Material created with texture UNLIT (${bitmap.width}x${bitmap.height})")
                 
             } catch (e: Exception) {
                 Log.e(MESH_TAG, "❌ Failed to create material with texture", e)
