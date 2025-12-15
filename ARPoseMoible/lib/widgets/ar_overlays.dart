@@ -15,6 +15,11 @@ class AROverlays extends StatelessWidget {
   final VoidCallback? onSwitchCamera;
   final bool isSwitchingCamera;
   // ==================================================
+  // ========== Augmented Image 3D ==========
+  final bool isAugmentedImageDetected;
+  final bool isAugmentedImage3DActive;
+  final VoidCallback? onToggleAugmentedImage3D;
+  // ========================================
 
   const AROverlays({
     required this.state,
@@ -26,6 +31,9 @@ class AROverlays extends StatelessWidget {
     required this.onRotateReticle,
     this.onSwitchCamera,
     this.isSwitchingCamera = false,
+    this.isAugmentedImageDetected = false,
+    this.isAugmentedImage3DActive = false,
+    this.onToggleAugmentedImage3D,
     super.key,
   });
 
@@ -199,6 +207,15 @@ class AROverlays extends StatelessWidget {
           )
         ),
 
+        // ========== Bouton Augmented Image 3D (au dessus du switch) ==========
+        if (state.isWorldMode && isAugmentedImageDetected)
+          Positioned(
+            bottom: 180,
+            right: 23,
+            child: _buildAugmentedImage3DButton(context),
+          ),
+        // =====================================================================
+
         // ========== Bouton Switch Caméra ==========
         Positioned(
           bottom: 120,
@@ -335,6 +352,44 @@ class AROverlays extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Construit le bouton pour activer/désactiver l'effet 3D sur image augmentée
+  Widget _buildAugmentedImage3DButton(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onToggleAugmentedImage3D,
+        borderRadius: BorderRadius.circular(25),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: isAugmentedImage3DActive 
+              ? Colors.green.withValues(alpha: 0.9)
+              : Colors.cyan.withValues(alpha: 0.8),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: (isAugmentedImage3DActive ? Colors.green : Colors.cyan).withValues(alpha: 0.4),
+                blurRadius: 12,
+                spreadRadius: 3,
+              ),
+            ],
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.5),
+              width: 2,
+            ),
+          ),
+          child: Icon(
+            isAugmentedImage3DActive ? Icons.blur_on : Icons.blur_off,
+            color: Colors.white,
+            size: 26,
+          ),
+        ),
       ),
     );
   }

@@ -73,6 +73,8 @@ flutter:
     - assets/models/world/
     - assets/models/face/3D/
     - assets/models/face/makeup/
+    - assets/ar_images/
+    - assets/ar_images/poster_01/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

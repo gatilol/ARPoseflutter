@@ -14,6 +14,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.lifecycle.Lifecycle
 import com.google.ar.core.AugmentedFace
+import com.google.ar.core.AugmentedImage
 import com.google.ar.core.Config
 import com.google.ar.core.Frame
 import com.google.ar.core.Plane
@@ -70,6 +71,8 @@ class ArView(
     // ========== Managers ==========
     private val faceArManager: FaceArManager
     private val anchorManager: AnchorManager
+    private val depth3DPhotoManager: Depth3DPhotoManager
+    private val augmentedImage3DManager: AugmentedImage3DManager
     
     // ========== État local ==========
     private val nodesMap = mutableMapOf<String, ModelNode>()
@@ -127,6 +130,17 @@ class ArView(
                 // ========== Makeup Texture Methods ==========
                 "setFaceMakeupTexture" -> faceArManager.handleSetFaceMakeupTexture(call, result)
                 "clearFaceMakeupTexture" -> faceArManager.handleClearFaceMakeupTexture(result)
+                // ========== 3D Photo Methods ==========
+                "capture3DPhoto" -> depth3DPhotoManager.handleCapture3DPhoto(result)
+                "start3DPhotoAnimation" -> depth3DPhotoManager.handleStartAnimation(result)
+                "stop3DPhotoAnimation" -> depth3DPhotoManager.handleStopAnimation(result)
+                "clear3DPhoto" -> depth3DPhotoManager.handleClear3DPhoto(result)
+                "getDepthInfo" -> depth3DPhotoManager.handleGetDepthInfo(result)
+                // ========== Augmented Image 3D Methods ==========
+                "loadAugmentedImages" -> augmentedImage3DManager.handleLoadImages(call, result)
+                "enableAugmentedImage3D" -> augmentedImage3DManager.handleEnable3DEffect(call, result)
+                "disableAugmentedImage3D" -> augmentedImage3DManager.handleDisable3DEffect(result)
+                "getDetectedAugmentedImages" -> augmentedImage3DManager.handleGetDetectedImages(result)
                 // =====================================
                 else -> result.notImplemented()
             }
@@ -171,6 +185,8 @@ class ArView(
         // Initialiser les managers
         faceArManager = FaceArManager(context, lifecycle, sessionChannel, mainScope)
         anchorManager = AnchorManager(sessionChannel, anchorChannel, mainScope)
+        depth3DPhotoManager = Depth3DPhotoManager(context, sessionChannel, mainScope)
+        augmentedImage3DManager = AugmentedImage3DManager(context, sessionChannel, mainScope)
         
         // Créer la vue World AR initiale
         sceneView = createWorldARSceneView()
@@ -179,6 +195,8 @@ class ArView(
         // Configurer les managers avec la sceneView
         faceArManager.setSceneView(sceneView)
         anchorManager.setSceneView(sceneView)
+        depth3DPhotoManager.setSceneView(sceneView)
+        augmentedImage3DManager.setSceneView(sceneView)
 
         // Configurer les handlers
         sessionChannel.setMethodCallHandler(onSessionMethodCall)
@@ -197,7 +215,11 @@ class ArView(
             sharedLifecycle = lifecycle,
             sessionConfiguration = { session, config ->
                 config.apply {
-                    depthMode = Config.DepthMode.DISABLED
+                    // IMPORTANT: Enable depth for 3D Photo feature
+                    depthMode = when (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
+                        true -> Config.DepthMode.AUTOMATIC
+                        else -> Config.DepthMode.DISABLED
+                    }
                     instantPlacementMode = Config.InstantPlacementMode.DISABLED
                     lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
                     focusMode = Config.FocusMode.AUTO
@@ -221,6 +243,8 @@ class ArView(
         // Mettre à jour les références dans les managers
         faceArManager.setSceneView(sceneView)
         anchorManager.setSceneView(sceneView)
+        depth3DPhotoManager.setSceneView(sceneView)
+        augmentedImage3DManager.setSceneView(sceneView)
     }
 
     /**
@@ -236,6 +260,8 @@ class ArView(
         // Mettre à jour les références dans les managers
         faceArManager.setSceneView(sceneView)
         anchorManager.setSceneView(sceneView)
+        depth3DPhotoManager.setSceneView(sceneView)
+        augmentedImage3DManager.setSceneView(sceneView)
         
         detectedPlanes.clear()
         
@@ -306,6 +332,10 @@ class ArView(
                                         }
                                     }
                                 }
+                                
+                                // Process Augmented Images for 3D effect
+                                val cameraPose = frame.camera.pose
+                                augmentedImage3DManager.onFrame(frame, cameraPose)
                             }
                         }
                     } catch (e: Exception) {
@@ -514,6 +544,10 @@ class ArView(
                                             }
                                         }
                                     }
+                                    
+                                    // Process Augmented Images for 3D effect
+                                    val cameraPose = frame.camera.pose
+                                    augmentedImage3DManager.onFrame(frame, cameraPose)
                                 } else if (faceArManager.currentArMode == "face") {
                                     // Gestion Face AR - déléguée au manager
                                     faceArManager.processFaceFrame(frame)
@@ -1208,6 +1242,8 @@ class ArView(
         // Cleanup managers
         faceArManager.cleanup()
         anchorManager.cleanup()
+        depth3DPhotoManager.cleanup()
+        augmentedImage3DManager.cleanup()
         
         nodesMap.clear()
         sceneView.destroy()

@@ -40,6 +40,12 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
   late Animation<double> _switchAnimation;
   // ====================================
 
+  // ========== AUGMENTED IMAGE 3D STATE ==========
+  bool _isAugmentedImageDetected = false;
+  bool _isAugmentedImage3DActive = false;
+  String? _detectedImageName;
+  // ==============================================
+
   @override
   void initState() {
     super.initState();
@@ -234,6 +240,11 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
         
         // Si on passe en Face AR, réappliquer les filtres sélectionnés
         if (newMode == ArMode.face) {
+          // Reset augmented image state
+          _isAugmentedImageDetected = false;
+          _isAugmentedImage3DActive = false;
+          _detectedImageName = null;
+          
           // Réappliquer le modèle 3D si présent
           if (currentFaceModelPath.isNotEmpty) {
             await arService.setFaceModel(currentFaceModelPath);
@@ -242,6 +253,9 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
           if (currentMakeupPath.isNotEmpty) {
             await arService.sessionManager?.setFaceMakeupTexture(currentMakeupPath);
           }
+        } else {
+          // Si on repasse en World AR, reconfigurer les images augmentées
+          _setupAugmentedImages();
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
@@ -305,6 +319,137 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
   }
 
   // ==================================================================================
+  // ========================= AUGMENTED IMAGE 3D =====================================
+  // ==================================================================================
+
+  /// Configure la détection d'images augmentées
+  Future<void> _setupAugmentedImages() async {
+    // Attendre que le sessionManager soit prêt
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    final sessionManager = arService.sessionManager;
+    if (sessionManager == null) return;
+
+    // Charger les images
+    final result = await sessionManager.loadAugmentedImages([
+      {
+        'name': 'poster_01',
+        'imagePath': 'assets/ar_images/poster_01/image.png',
+        'depthPath': 'assets/ar_images/poster_01/image_depth.png',
+        'physicalWidth': 0.20,  // 20cm - ajuster selon taille réelle
+      },
+    ]);
+
+    if (result != null && result['success'] == true) {
+      debugPrint('✅ Augmented images loaded: ${result['loadedCount']}');
+    } else {
+      debugPrint('⚠️ Failed to load augmented images');
+    }
+
+    // Configurer le callback de détection
+    sessionManager.onAugmentedImageDetected = (imageName, detected) {
+      debugPrint('🎯 Image "$imageName": ${detected ? "DETECTED" : "LOST"}');
+      
+      if (mounted) {
+        setState(() {
+          _isAugmentedImageDetected = detected;
+          _detectedImageName = detected ? imageName : null;
+          
+          // Désactiver l'effet 3D si l'image est perdue
+          if (!detected && _isAugmentedImage3DActive) {
+            _isAugmentedImage3DActive = false;
+          }
+        });
+
+        // Notification à l'utilisateur
+        if (detected) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.image_search, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Text('Image "$imageName" détectée !'),
+                ],
+              ),
+              duration: const Duration(seconds: 2),
+              backgroundColor: Colors.cyan,
+            ),
+          );
+        }
+      }
+    };
+  }
+
+  /// Active/désactive l'effet 3D sur l'image détectée
+  Future<void> _toggleAugmentedImage3D() async {
+    if (_detectedImageName == null) return;
+
+    final sessionManager = arService.sessionManager;
+    if (sessionManager == null) return;
+
+    HapticFeedback.mediumImpact();
+
+    if (_isAugmentedImage3DActive) {
+      // Désactiver
+      final success = await sessionManager.disableAugmentedImage3D();
+      if (success && mounted) {
+        setState(() {
+          _isAugmentedImage3DActive = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.blur_off, color: Colors.white),
+                SizedBox(width: 12),
+                Text('Effet 3D désactivé'),
+              ],
+            ),
+            duration: Duration(seconds: 1),
+            backgroundColor: Colors.grey,
+          ),
+        );
+      }
+    } else {
+      // Activer
+      final success = await sessionManager.enableAugmentedImage3D(_detectedImageName!);
+      if (success && mounted) {
+        setState(() {
+          _isAugmentedImage3DActive = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.blur_on, color: Colors.white),
+                SizedBox(width: 12),
+                Text('Effet 3D activé ! Bougez le téléphone'),
+              ],
+            ),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.white),
+                SizedBox(width: 12),
+                Text('Erreur activation effet 3D'),
+              ],
+            ),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // ==================================================================================
   // ========================= BUILD =================================================
   // ==================================================================================
 
@@ -323,6 +468,8 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                 ARView(
                   onARViewCreated: (sessionManager, objectManager, anchorManager, locationManager) {
                     arService.onARViewCreated(sessionManager, objectManager, anchorManager);
+                    // Setup augmented image detection
+                    _setupAugmentedImages();
                   },
                   planeDetectionConfig: arState.isWorldMode 
                     ? PlaneDetectionConfig.horizontal 
@@ -403,6 +550,11 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                     },
                     onSwitchCamera: _toggleCameraMode,
                     isSwitchingCamera: _isSwitchingCamera,
+                    // ========== Augmented Image 3D ==========
+                    isAugmentedImageDetected: _isAugmentedImageDetected,
+                    isAugmentedImage3DActive: _isAugmentedImage3DActive,
+                    onToggleAugmentedImage3D: _toggleAugmentedImage3D,
+                    // ========================================
                   ),
 
                 // Menu de sélection des modèles
