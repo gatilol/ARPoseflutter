@@ -43,10 +43,6 @@ class ARSessionManager {
   Function(String mode)? onModeChanged;
   // =======================================
 
-  // ========== 3D Photo Callbacks ==========
-  Function(bool success)? on3DPhotoCaptured;
-  // ========================================
-
   // ========== Augmented Image Callbacks ==========
   Function(String imageName, bool detected)? onAugmentedImageDetected;
   // ===============================================
@@ -196,13 +192,6 @@ class ARSessionManager {
           onModeChanged?.call(mode);
           break;
         // =======================================
-        // ========== 3D Photo Callbacks ==========
-        case 'on3DPhotoCaptured':
-          final args = call.arguments as Map?;
-          final success = args?['success'] as bool? ?? false;
-          on3DPhotoCaptured?.call(success);
-          break;
-        // ========================================
         // ========== Augmented Image Callbacks ==========
         case 'onAugmentedImageDetected':
           final args = call.arguments as Map?;
@@ -428,92 +417,16 @@ class ARSessionManager {
   }
 
   // ==================================================================================
-  // ========================= 3D PHOTO METHODS =======================================
-  // ==================================================================================
-
-  /// Capture current frame as 3D photo
-  /// Creates a 3D mesh from depth data and camera image
-  /// Returns map with: success, depthWidth, depthHeight, imageWidth, imageHeight
-  /// Requirements:
-  /// - Device must support ARCore Depth API (Pixel 4+, Samsung S20+, etc.)
-  /// - Must be in World AR mode (not Face AR)
-  /// - User must have moved the device to build depth map
-  Future<Map<String, dynamic>?> capture3DPhoto() async {
-    try {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>('capture3DPhoto', {});
-      if (result != null) {
-        return Map<String, dynamic>.from(result);
-      }
-      return null;
-    } catch (e) {
-      print('Error capturing 3D photo: $e');
-      return null;
-    }
-  }
-
-  /// Start 3D photo animation (camera orbits around captured scene)
-  /// Must call capture3DPhoto() first
-  Future<bool> start3DPhotoAnimation() async {
-    try {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>('start3DPhotoAnimation', {});
-      return result?['success'] == true;
-    } catch (e) {
-      print('Error starting 3D photo animation: $e');
-      return false;
-    }
-  }
-
-  /// Stop 3D photo animation
-  Future<bool> stop3DPhotoAnimation() async {
-    try {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>('stop3DPhotoAnimation', {});
-      return result?['success'] == true;
-    } catch (e) {
-      print('Error stopping 3D photo animation: $e');
-      return false;
-    }
-  }
-
-  /// Clear 3D photo and return to live camera
-  Future<bool> clear3DPhoto() async {
-    try {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>('clear3DPhoto', {});
-      return result?['success'] == true;
-    } catch (e) {
-      print('Error clearing 3D photo: $e');
-      return false;
-    }
-  }
-
-  /// Get depth information for current frame (for debugging)
-  /// Returns map with:
-  /// - available: bool - whether depth is available
-  /// - width, height: depth image dimensions
-  /// - minDepthMm, maxDepthMm, avgDepthMm, centerDepthMm: depth statistics in millimeters
-  /// - validPixels, totalPixels: pixel counts
-  Future<Map<String, dynamic>?> getDepthInfo() async {
-    try {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>('getDepthInfo', {});
-      if (result != null) {
-        return Map<String, dynamic>.from(result);
-      }
-      return null;
-    } catch (e) {
-      print('Error getting depth info: $e');
-      return null;
-    }
-  }
-
-  // ==================================================================================
   // ========================= AUGMENTED IMAGE 3D METHODS =============================
   // ==================================================================================
 
-  /// Load images for augmented image detection
+  /// Load images for augmented image detection with 3D models
   /// Each image config should contain:
   /// - name: String - unique identifier for the image
-  /// - imagePath: String - path to the image in Flutter assets (e.g., 'assets/ar_images/poster_01/image.png')
-  /// - depthPath: String - path to the depth map in Flutter assets (e.g., 'assets/ar_images/poster_01/image_depth.png')
+  /// - imagePath: String - path to the detection image in Flutter assets (e.g., 'assets/ar_images/poster_01/image.png')
+  /// - modelPath: String - path to the 3D model (.glb) in Flutter assets (e.g., 'assets/ar_images/poster_01/model.glb')
   /// - physicalWidth: double - physical width of the image in meters (e.g., 0.3 for 30cm)
+  /// - modelScale: double (optional) - scale factor for the 3D model (default: 1.0)
   /// Returns map with: success, loadedCount
   Future<Map<String, dynamic>?> loadAugmentedImages(List<Map<String, dynamic>> imageConfigs) async {
     try {

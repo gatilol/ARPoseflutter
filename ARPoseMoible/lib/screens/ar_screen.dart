@@ -335,8 +335,11 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
       {
         'name': 'poster_01',
         'imagePath': 'assets/ar_images/poster_01/image.png',
-        'depthPath': 'assets/ar_images/poster_01/image_depth.png',
-        'physicalWidth': 0.20,  // 20cm - ajuster selon taille réelle
+        'modelPath': 'assets/ar_images/poster_01/model.glb',
+        'physicalWidth': 0.20,       // 20cm - ajuster selon taille réelle
+        'modelScale': 0.1,           // Échelle du modèle 3D
+        'modelYOffset': -0.05,         // Décalage vertical (négatif = plus bas)
+        'modelRotationOffset': 0.0,  // Rotation supplémentaire en degrés
       },
     ]);
 
@@ -381,7 +384,7 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
     };
   }
 
-  /// Active/désactive l'effet 3D sur l'image détectée
+  /// Active/désactive le modèle 3D sur l'image détectée
   Future<void> _toggleAugmentedImage3D() async {
     if (_detectedImageName == null) return;
 
@@ -401,9 +404,9 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
           const SnackBar(
             content: Row(
               children: [
-                Icon(Icons.blur_off, color: Colors.white),
+                Icon(Icons.view_in_ar_outlined, color: Colors.white),
                 SizedBox(width: 12),
-                Text('Effet 3D désactivé'),
+                Text('Modèle 3D désactivé'),
               ],
             ),
             duration: Duration(seconds: 1),
@@ -422,9 +425,9 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
           const SnackBar(
             content: Row(
               children: [
-                Icon(Icons.blur_on, color: Colors.white),
+                Icon(Icons.view_in_ar, color: Colors.white),
                 SizedBox(width: 12),
-                Text('Effet 3D activé ! Bougez le téléphone'),
+                Text('Modèle 3D activé !'),
               ],
             ),
             duration: Duration(seconds: 2),
@@ -438,7 +441,7 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
               children: [
                 Icon(Icons.error_outline, color: Colors.white),
                 SizedBox(width: 12),
-                Text('Erreur activation effet 3D'),
+                Text('Erreur activation modèle 3D'),
               ],
             ),
             duration: Duration(seconds: 2),

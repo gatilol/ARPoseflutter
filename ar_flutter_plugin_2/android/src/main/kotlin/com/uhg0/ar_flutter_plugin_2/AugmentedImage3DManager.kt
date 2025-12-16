@@ -4,51 +4,36 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
-import com.google.android.filament.Box
-import com.google.android.filament.Engine
-import com.google.android.filament.EntityManager
-import com.google.android.filament.IndexBuffer
-import com.google.android.filament.MaterialInstance
-import com.google.android.filament.RenderableManager
-import com.google.android.filament.Texture
-import com.google.android.filament.VertexBuffer
-import com.google.android.filament.android.TextureHelper
 import com.google.ar.core.AugmentedImage
 import com.google.ar.core.AugmentedImageDatabase
-import com.google.ar.core.Config
 import com.google.ar.core.Frame
 import com.google.ar.core.Pose
-import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import io.flutter.FlutterInjector
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.github.sceneview.ar.ARSceneView
-import io.github.sceneview.loaders.MaterialLoader
+import io.github.sceneview.node.ModelNode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.FloatBuffer
-import java.nio.ShortBuffer
-import kotlin.math.abs
+import io.github.sceneview.math.Position as ScenePosition
+import io.github.sceneview.math.Rotation as SceneRotation
+import io.github.sceneview.math.Scale as SceneScale
 
 /**
- * AugmentedImage3DManager - Gestionnaire de l'effet 3D sur images augmentées
+ * AugmentedImage3DManager - Gestionnaire de modèles 3D sur images augmentées
  * 
  * Cette classe gère :
  * - La détection d'images connues via ARCore Augmented Images
- * - Le chargement des images de référence et leurs depth maps
- * - L'effet parallaxe 3D basé sur la position de la caméra
- * - Les notifications vers Flutter
+ * - L'affichage d'un modèle 3D qui "sort" de l'image détectée
+ * - Le suivi de position du modèle sur l'image
  * 
  * Workflow:
- * 1. Charger les images de référence dans la base de données ARCore
+ * 1. Charger les images de référence + chemin vers modèle 3D
  * 2. Détecter les images dans le monde réel
- * 3. Quand activé, afficher un quad avec effet parallaxe
- * 4. L'effet utilise la depth map pour simuler la 3D
+ * 3. Quand activé, afficher le modèle 3D au-dessus de l'image
  */
 class AugmentedImage3DManager(
     private val context: Context,
@@ -57,10 +42,6 @@ class AugmentedImage3DManager(
 ) {
     companion object {
         private const val TAG = "AugmentedImage3DManager"
-        
-        // Parallax effect settings
-        private const val PARALLAX_STRENGTH = 0.03f  // How much the image moves
-        private const val QUAD_SEGMENTS = 80  // Grid resolution for mesh deformation
     }
     
     // ========== State ==========
@@ -72,15 +53,20 @@ class AugmentedImage3DManager(
     private val trackedImages = mutableMapOf<String, TrackedImageInfo>()
     private var activeImageName: String? = null
     
-    // 3D Effect renderer
-    private var parallaxRenderer: ParallaxRenderer? = null
+    // 3D Model
+    private var modelNode: ModelNode? = null
+    private var currentImageData: ImageData? = null
+    private var initialRotationY: Float = 0f  // Rotation Y fixée au placement
+    private var lastCameraPose: Pose? = null  // Dernière position caméra connue
     
     // Image data cache
     internal data class ImageData(
         val name: String,
-        val image: Bitmap,
-        val depthMap: Bitmap,
-        val physicalWidth: Float  // in meters
+        val modelPath: String,       // Chemin vers le modèle 3D
+        val physicalWidth: Float,    // Taille physique en mètres
+        val modelScale: Float = 1.0f, // Échelle du modèle
+        val modelYOffset: Float = 0f,  // Décalage vertical (négatif = plus bas)
+        val modelRotationOffset: Float = 0f  // Offset de rotation Y en degrés (pour ajuster manuellement)
     )
     private val loadedImages = mutableMapOf<String, ImageData>()
     
@@ -94,389 +80,6 @@ class AugmentedImage3DManager(
         var lastUpdateTime: Long
     )
     
-    // ========== ParallaxRenderer Inner Class ==========
-    /**
-     * ParallaxRenderer - Renders a quad with parallax displacement effect
-     * Uses the depth map to displace vertices based on camera position
-     */
-    inner class ParallaxRenderer(
-        private val engine: Engine,
-        private val scene: com.google.android.filament.Scene,
-        private val materialLoader: MaterialLoader
-    ) {
-        private val RENDERER_TAG = "ParallaxRenderer"
-        
-        // Grid dimensions
-        private val gridWidth = QUAD_SEGMENTS
-        private val gridHeight = QUAD_SEGMENTS
-        private val vertexCount = (gridWidth + 1) * (gridHeight + 1)
-        private val indexCount = gridWidth * gridHeight * 6
-        
-        // Filament resources
-        private var entity: Int = 0
-        private var vertexBuffer: VertexBuffer? = null
-        private var indexBuffer: IndexBuffer? = null
-        private var materialInstance: MaterialInstance? = null
-        private var imageTexture: Texture? = null
-        private var depthTexture: Texture? = null
-        
-        // Buffers
-        private val positionBuffer: FloatBuffer = ByteBuffer
-            .allocateDirect(vertexCount * 3 * Float.SIZE_BYTES)
-            .order(ByteOrder.nativeOrder())
-            .asFloatBuffer()
-            
-        private val uvBuffer: FloatBuffer = ByteBuffer
-            .allocateDirect(vertexCount * 2 * Float.SIZE_BYTES)
-            .order(ByteOrder.nativeOrder())
-            .asFloatBuffer()
-            
-        private val indexData: ShortBuffer = ByteBuffer
-            .allocateDirect(indexCount * Short.SIZE_BYTES)
-            .order(ByteOrder.nativeOrder())
-            .asShortBuffer()
-        
-        // State
-        private var isInitialized = false
-        private var isVisible = false
-        private var currentImageData: ImageData? = null
-        private var currentPose: Pose? = null
-        private var quadWidth = 1f
-        private var quadHeight = 1f
-        
-        // Base positions (without displacement)
-        private val basePositions = FloatArray(vertexCount * 3)
-        
-        // Depth values cache
-        private var depthValues: FloatArray? = null
-        
-        internal fun initialize(imageData: ImageData, pose: Pose, extentX: Float, extentZ: Float) {
-            if (isInitialized) {
-                destroy()
-            }
-            
-            try {
-                Log.d(RENDERER_TAG, "🖼️ Initializing ParallaxRenderer for: ${imageData.name}")
-                Log.d(RENDERER_TAG, "   Image size: ${imageData.image.width}x${imageData.image.height}")
-                Log.d(RENDERER_TAG, "   Depth size: ${imageData.depthMap.width}x${imageData.depthMap.height}")
-                Log.d(RENDERER_TAG, "   Physical extent: ${extentX}m x ${extentZ}m")
-                
-                currentImageData = imageData
-                currentPose = pose
-                quadWidth = extentX
-                quadHeight = extentZ
-                
-                // Cache depth values
-                cacheDepthValues(imageData.depthMap)
-                
-                // Generate mesh
-                generateBaseMesh()
-                generateUVs()
-                generateIndices()
-                
-                // Create Filament resources
-                createVertexBuffer()
-                createIndexBuffer()
-                createTextures(imageData)
-                createMaterial()
-                createRenderable()
-                
-                isInitialized = true
-                isVisible = true
-                
-                Log.d(RENDERER_TAG, "✅ ParallaxRenderer initialized!")
-                
-            } catch (e: Exception) {
-                Log.e(RENDERER_TAG, "❌ Failed to initialize ParallaxRenderer", e)
-            }
-        }
-        
-        private fun cacheDepthValues(depthMap: Bitmap) {
-            depthValues = FloatArray(vertexCount)
-            
-            for (row in 0..gridHeight) {
-                for (col in 0..gridWidth) {
-                    val u = col.toFloat() / gridWidth
-                    val v = row.toFloat() / gridHeight
-                    
-                    // Sample depth map (bitmap origin is top-left)
-                    val pixelX = (u * (depthMap.width - 1)).toInt().coerceIn(0, depthMap.width - 1)
-                    val pixelY = (v * (depthMap.height - 1)).toInt().coerceIn(0, depthMap.height - 1)
-                    val pixel = depthMap.getPixel(pixelX, pixelY)
-                    
-                    // Convert to normalized depth (0-1, where 1 is closest/white)
-                    val gray = (android.graphics.Color.red(pixel) + 
-                               android.graphics.Color.green(pixel) + 
-                               android.graphics.Color.blue(pixel)) / (3f * 255f)
-                    
-                    val index = row * (gridWidth + 1) + col
-                    depthValues!![index] = gray
-                }
-            }
-        }
-        
-        private fun generateBaseMesh() {
-            positionBuffer.clear()
-            
-            val halfWidth = quadWidth / 2f
-            val halfHeight = quadHeight / 2f
-            
-            var idx = 0
-            for (row in 0..gridHeight) {
-                for (col in 0..gridWidth) {
-                    val u = col.toFloat() / gridWidth
-                    val v = row.toFloat() / gridHeight
-                    
-                    // Position in local space (centered at origin)
-                    val x = (u - 0.5f) * quadWidth
-                    val y = 0f  // Flat on the surface
-                    val z = (v - 0.5f) * quadHeight
-                    
-                    basePositions[idx * 3] = x
-                    basePositions[idx * 3 + 1] = y
-                    basePositions[idx * 3 + 2] = z
-                    
-                    positionBuffer.put(x)
-                    positionBuffer.put(y)
-                    positionBuffer.put(z)
-                    
-                    idx++
-                }
-            }
-            positionBuffer.rewind()
-        }
-        
-        private fun generateUVs() {
-            uvBuffer.clear()
-            
-            for (row in 0..gridHeight) {
-                for (col in 0..gridWidth) {
-                    val u = col.toFloat() / gridWidth
-                    // Invert V coordinate (texture origin is bottom-left, image origin is top-left)
-                    val v = 1.0f - (row.toFloat() / gridHeight)
-                    
-                    uvBuffer.put(u)
-                    uvBuffer.put(v)
-                }
-            }
-            uvBuffer.rewind()
-        }
-        
-        private fun generateIndices() {
-            indexData.clear()
-            
-            for (row in 0 until gridHeight) {
-                for (col in 0 until gridWidth) {
-                    val topLeft = row * (gridWidth + 1) + col
-                    val topRight = topLeft + 1
-                    val bottomLeft = (row + 1) * (gridWidth + 1) + col
-                    val bottomRight = bottomLeft + 1
-                    
-                    // First triangle
-                    indexData.put(topLeft.toShort())
-                    indexData.put(bottomLeft.toShort())
-                    indexData.put(topRight.toShort())
-                    
-                    // Second triangle
-                    indexData.put(topRight.toShort())
-                    indexData.put(bottomLeft.toShort())
-                    indexData.put(bottomRight.toShort())
-                }
-            }
-            indexData.rewind()
-        }
-        
-        private fun createVertexBuffer() {
-            vertexBuffer = VertexBuffer.Builder()
-                .bufferCount(2)
-                .vertexCount(vertexCount)
-                .attribute(
-                    VertexBuffer.VertexAttribute.POSITION,
-                    0,
-                    VertexBuffer.AttributeType.FLOAT3,
-                    0,
-                    3 * Float.SIZE_BYTES
-                )
-                .attribute(
-                    VertexBuffer.VertexAttribute.UV0,
-                    1,
-                    VertexBuffer.AttributeType.FLOAT2,
-                    0,
-                    2 * Float.SIZE_BYTES
-                )
-                .build(engine)
-            
-            vertexBuffer?.setBufferAt(engine, 0, positionBuffer)
-            vertexBuffer?.setBufferAt(engine, 1, uvBuffer)
-        }
-        
-        private fun createIndexBuffer() {
-            indexBuffer = IndexBuffer.Builder()
-                .indexCount(indexCount)
-                .bufferType(IndexBuffer.Builder.IndexType.USHORT)
-                .build(engine)
-            
-            indexBuffer?.setBuffer(engine, indexData)
-        }
-        
-        private fun createTextures(imageData: ImageData) {
-            // Main image texture
-            imageTexture = Texture.Builder()
-                .width(imageData.image.width)
-                .height(imageData.image.height)
-                .sampler(Texture.Sampler.SAMPLER_2D)
-                .format(Texture.InternalFormat.SRGB8_A8)
-                .levels(1)
-                .build(engine)
-            
-            TextureHelper.setBitmap(engine, imageTexture!!, 0, imageData.image)
-            
-            // Depth map texture (for reference, not used in current simple implementation)
-            depthTexture = Texture.Builder()
-                .width(imageData.depthMap.width)
-                .height(imageData.depthMap.height)
-                .sampler(Texture.Sampler.SAMPLER_2D)
-                .format(Texture.InternalFormat.R8)
-                .levels(1)
-                .build(engine)
-            
-            Log.d(RENDERER_TAG, "🎨 Textures created")
-        }
-        
-        private fun createMaterial() {
-            // Use unlit material with image texture
-            materialInstance = materialLoader.createImageInstance(
-                imageTexture = imageTexture!!
-            )
-            Log.d(RENDERER_TAG, "🎨 Material created")
-        }
-        
-        private fun createRenderable() {
-            entity = EntityManager.get().create()
-            
-            val halfWidth = quadWidth / 2f
-            val halfHeight = quadHeight / 2f
-            
-            RenderableManager.Builder(1)
-                .boundingBox(Box(
-                    -halfWidth, -0.1f, -halfHeight,
-                    halfWidth, 0.1f, halfHeight
-                ))
-                .geometry(
-                    0,
-                    RenderableManager.PrimitiveType.TRIANGLES,
-                    vertexBuffer!!,
-                    indexBuffer!!,
-                    0,
-                    indexCount
-                )
-                .material(0, materialInstance!!)
-                .culling(false)
-                .castShadows(false)
-                .receiveShadows(false)
-                .build(engine, entity)
-            
-            scene.addEntity(entity)
-            Log.d(RENDERER_TAG, "✅ Renderable created and added to scene")
-        }
-        
-        /**
-         * Update the parallax effect based on camera position
-         */
-        fun updateParallax(cameraPose: Pose, imagePose: Pose) {
-            if (!isInitialized || !isVisible || depthValues == null) return
-            
-            // Calculate camera offset relative to image center
-            val imagePos = imagePose.translation
-            val cameraPos = cameraPose.translation
-            
-            // Offset in image's local space
-            val dx = cameraPos[0] - imagePos[0]
-            val dz = cameraPos[2] - imagePos[2]
-            
-            // Update vertex positions with parallax displacement
-            positionBuffer.clear()
-            
-            for (i in 0 until vertexCount) {
-                val depth = depthValues!![i]
-                
-                // Displacement based on depth and camera offset
-                // Closer pixels (higher depth value) move more
-                val displacement = (depth - 0.5f) * PARALLAX_STRENGTH
-                
-                val baseX = basePositions[i * 3]
-                val baseY = basePositions[i * 3 + 1]
-                val baseZ = basePositions[i * 3 + 2]
-                
-                // Apply displacement
-                val newX = baseX + dx * displacement
-                val newY = baseY + depth * PARALLAX_STRENGTH * 0.5f  // Slight height variation
-                val newZ = baseZ + dz * displacement
-                
-                positionBuffer.put(newX)
-                positionBuffer.put(newY)
-                positionBuffer.put(newZ)
-            }
-            positionBuffer.rewind()
-            
-            // Update vertex buffer
-            vertexBuffer?.setBufferAt(engine, 0, positionBuffer)
-            
-            // Update transform to match image pose
-            val transformManager = engine.transformManager
-            val instance = transformManager.getInstance(entity)
-            if (instance != 0) {
-                val matrix = FloatArray(16)
-                imagePose.toMatrix(matrix, 0)
-                transformManager.setTransform(instance, matrix)
-            }
-        }
-        
-        fun setVisible(visible: Boolean) {
-            if (!isInitialized) return
-            
-            if (visible && !isVisible) {
-                scene.addEntity(entity)
-            } else if (!visible && isVisible) {
-                scene.removeEntity(entity)
-            }
-            isVisible = visible
-        }
-        
-        fun destroy() {
-            if (!isInitialized) return
-            
-            try {
-                scene.removeEntity(entity)
-                engine.destroyEntity(entity)
-                EntityManager.get().destroy(entity)
-                
-                vertexBuffer?.let { engine.destroyVertexBuffer(it) }
-                indexBuffer?.let { engine.destroyIndexBuffer(it) }
-                imageTexture?.let { engine.destroyTexture(it) }
-                depthTexture?.let { engine.destroyTexture(it) }
-                materialInstance?.let { engine.destroyMaterialInstance(it) }
-                
-                vertexBuffer = null
-                indexBuffer = null
-                imageTexture = null
-                depthTexture = null
-                materialInstance = null
-                depthValues = null
-                currentImageData = null
-                
-                isInitialized = false
-                isVisible = false
-                
-                Log.d(RENDERER_TAG, "🗑️ ParallaxRenderer destroyed")
-            } catch (e: Exception) {
-                Log.e(RENDERER_TAG, "Error destroying ParallaxRenderer", e)
-            }
-        }
-        
-        fun isActive(): Boolean = isInitialized && isVisible
-    }
-    
     // ========== Public API ==========
     
     fun setSceneView(sceneView: ARSceneView) {
@@ -486,6 +89,12 @@ class AugmentedImage3DManager(
     
     /**
      * Load images from Flutter assets into ARCore database
+     * Each image config should contain:
+     * - name: unique identifier
+     * - imagePath: path to detection image
+     * - modelPath: path to 3D model (.glb)
+     * - physicalWidth: width in meters
+     * - modelScale: (optional) scale factor for the model
      */
     fun handleLoadImages(call: MethodCall, result: MethodChannel.Result) {
         val imageConfigs = call.argument<List<Map<String, Any>>>("images")
@@ -511,27 +120,31 @@ class AugmentedImage3DManager(
                 for (config in imageConfigs) {
                     val name = config["name"] as? String ?: continue
                     val imagePath = config["imagePath"] as? String ?: continue
-                    val depthPath = config["depthPath"] as? String ?: continue
+                    val modelPath = config["modelPath"] as? String ?: continue
                     val physicalWidth = (config["physicalWidth"] as? Double)?.toFloat() ?: 0.3f
+                    val modelScale = (config["modelScale"] as? Double)?.toFloat() ?: 1.0f
+                    val modelYOffset = (config["modelYOffset"] as? Double)?.toFloat() ?: 0f
+                    val modelRotationOffset = (config["modelRotationOffset"] as? Double)?.toFloat() ?: 0f
                     
-                    // Load images from Flutter assets
+                    // Load image from Flutter assets for ARCore detection
                     val imageBitmap = loadBitmapFromAssets(imagePath)
-                    val depthBitmap = loadBitmapFromAssets(depthPath)
                     
-                    if (imageBitmap != null && depthBitmap != null) {
+                    if (imageBitmap != null) {
                         // Add to ARCore database
                         imageDatabase?.addImage(name, imageBitmap, physicalWidth)
                         
                         // Cache the data
                         loadedImages[name] = ImageData(
                             name = name,
-                            image = imageBitmap,
-                            depthMap = depthBitmap,
-                            physicalWidth = physicalWidth
+                            modelPath = modelPath,
+                            physicalWidth = physicalWidth,
+                            modelScale = modelScale,
+                            modelYOffset = modelYOffset,
+                            modelRotationOffset = modelRotationOffset
                         )
                         
                         loadedCount++
-                        Log.d(TAG, "✅ Loaded image: $name (${imageBitmap.width}x${imageBitmap.height})")
+                        Log.d(TAG, "✅ Loaded image: $name → model: $modelPath")
                     } else {
                         Log.e(TAG, "❌ Failed to load image: $name")
                     }
@@ -558,7 +171,7 @@ class AugmentedImage3DManager(
     }
     
     /**
-     * Enable 3D effect on a detected image
+     * Enable 3D model on a detected image
      */
     fun handleEnable3DEffect(call: MethodCall, result: MethodChannel.Result) {
         val imageName = call.argument<String>("imageName")
@@ -588,49 +201,96 @@ class AugmentedImage3DManager(
                     return@launch
                 }
                 
-                // Create parallax renderer
-                parallaxRenderer?.destroy()
-                parallaxRenderer = ParallaxRenderer(
-                    engine = sv.engine,
-                    scene = sv.scene,
-                    materialLoader = sv.materialLoader
-                )
+                // Remove existing model if any
+                modelNode?.let { 
+                    sv.removeChildNode(it)
+                    it.destroy()
+                }
                 
-                parallaxRenderer?.initialize(
-                    imageData = imageData,
-                    pose = trackedInfo.pose,
-                    extentX = trackedInfo.extentX,
-                    extentZ = trackedInfo.extentZ
-                )
+                // Load 3D model using Flutter asset path
+                val loader = FlutterInjector.instance().flutterLoader()
+                val modelKey = loader.getLookupKeyForAsset(imageData.modelPath)
+                val modelInstance = sv.modelLoader.loadModelInstance(modelKey)
+                
+                if (modelInstance == null) {
+                    result.error("MODEL_ERROR", "Failed to load model: ${imageData.modelPath}", null)
+                    return@launch
+                }
+                
+                // Create model node
+                modelNode = ModelNode(
+                    modelInstance = modelInstance
+                ).apply {
+                    // Position sur l'image avec offset Y
+                    val pose = trackedInfo.pose
+                    position = ScenePosition(
+                        x = pose.tx(),
+                        y = pose.ty() + imageData.modelYOffset,
+                        z = pose.tz()
+                    )
+                    
+                    // Calculer la rotation pour que le modèle regarde vers la caméra
+                    val camPose = lastCameraPose
+                    if (camPose != null) {
+                        // Direction du modèle vers la caméra
+                        val dx = camPose.tx() - pose.tx()
+                        val dz = camPose.tz() - pose.tz()
+                        
+                        // Angle en degrés (atan2 donne l'angle vers la caméra)
+                        val angleToCamera = Math.toDegrees(Math.atan2(dx.toDouble(), dz.toDouble())).toFloat()
+                        
+                        // Rotation finale = angle vers caméra + offset manuel
+                        initialRotationY = angleToCamera + imageData.modelRotationOffset
+                    } else {
+                        // Fallback si pas de camera pose
+                        initialRotationY = imageData.modelRotationOffset
+                    }
+                    
+                    rotation = SceneRotation(x = 0f, y = initialRotationY, z = 0f)
+                    
+                    // Échelle du modèle
+                    val s = imageData.modelScale
+                    scale = SceneScale(s, s, s)
+                }
+                
+                // Store current image data for updates
+                currentImageData = imageData
+                
+                sv.addChildNode(modelNode!!)
                 
                 activeImageName = imageName
                 isEnabled = true
                 
-                Log.d(TAG, "✅ 3D effect enabled for: $imageName")
+                Log.d(TAG, "✅ 3D model enabled for: $imageName")
                 result.success(mapOf("success" to true))
                 
             } catch (e: Exception) {
-                Log.e(TAG, "Error enabling 3D effect", e)
+                Log.e(TAG, "Error enabling 3D model", e)
                 result.error("ENABLE_ERROR", e.message, null)
             }
         }
     }
     
     /**
-     * Disable 3D effect
+     * Disable 3D model
      */
     fun handleDisable3DEffect(result: MethodChannel.Result) {
         try {
-            parallaxRenderer?.destroy()
-            parallaxRenderer = null
+            modelNode?.let { node ->
+                sceneView?.removeChildNode(node)
+                node.destroy()
+            }
+            modelNode = null
+            currentImageData = null
+            initialRotationY = 0f
             activeImageName = null
             isEnabled = false
             
-            Log.d(TAG, "✅ 3D effect disabled")
+            Log.d(TAG, "✅ 3D model disabled")
             result.success(mapOf("success" to true))
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error disabling 3D effect", e)
+            Log.e(TAG, "Error disabling 3D model", e)
             result.error("DISABLE_ERROR", e.message, null)
         }
     }
@@ -661,6 +321,9 @@ class AugmentedImage3DManager(
      */
     fun onFrame(frame: Frame, cameraPose: Pose) {
         if (imageDatabase == null) return
+        
+        // Store camera pose for model orientation calculation
+        lastCameraPose = cameraPose
         
         try {
             // Update tracked images
@@ -698,9 +361,9 @@ class AugmentedImage3DManager(
                             existingInfo.lastUpdateTime = System.currentTimeMillis()
                         }
                         
-                        // Update parallax effect if this is the active image
-                        if (isEnabled && name == activeImageName && parallaxRenderer?.isActive() == true) {
-                            parallaxRenderer?.updateParallax(cameraPose, pose)
+                        // Update model position if this is the active image
+                        if (isEnabled && name == activeImageName) {
+                            updateModelPosition(pose)
                         }
                     }
                     
@@ -711,9 +374,9 @@ class AugmentedImage3DManager(
                             notifyImageDetected(name, false)
                             Log.d(TAG, "📤 Image lost: $name")
                             
-                            // Hide effect if this was the active image
+                            // Hide model if this was the active image
                             if (name == activeImageName) {
-                                parallaxRenderer?.setVisible(false)
+                                modelNode?.isVisible = false
                             }
                         }
                     }
@@ -726,16 +389,37 @@ class AugmentedImage3DManager(
     }
     
     /**
+     * Update 3D model position to follow the image
+     */
+    private fun updateModelPosition(pose: Pose) {
+        modelNode?.let { node ->
+            node.isVisible = true
+            
+            // Position avec Y offset
+            val yOffset = currentImageData?.modelYOffset ?: 0f
+            node.position = ScenePosition(
+                x = pose.tx(),
+                y = pose.ty() + yOffset,
+                z = pose.tz()
+            )
+            
+            // Pas de mise à jour de rotation pour éviter les tremblements/rotations
+        }
+    }
+    
+    /**
      * Cleanup resources
      */
     fun cleanup() {
-        parallaxRenderer?.destroy()
-        parallaxRenderer = null
-        
-        loadedImages.values.forEach { data ->
-            data.image.recycle()
-            data.depthMap.recycle()
+        modelNode?.let { node ->
+            sceneView?.removeChildNode(node)
+            node.destroy()
         }
+        modelNode = null
+        currentImageData = null
+        initialRotationY = 0f
+        lastCameraPose = null
+        
         loadedImages.clear()
         trackedImages.clear()
         
@@ -745,6 +429,27 @@ class AugmentedImage3DManager(
         sceneView = null
         
         Log.d(TAG, "🧹 AugmentedImage3DManager cleaned up")
+    }
+    
+    /**
+     * Reset state for camera switch (keeps loadedImages but clears tracking state)
+     */
+    fun resetForCameraSwitch() {
+        modelNode?.let { node ->
+            sceneView?.removeChildNode(node)
+            node.destroy()
+        }
+        modelNode = null
+        currentImageData = null
+        initialRotationY = 0f
+        lastCameraPose = null
+        
+        trackedImages.clear()
+        imageDatabase = null
+        activeImageName = null
+        isEnabled = false
+        
+        Log.d(TAG, "🔄 AugmentedImage3DManager reset for camera switch")
     }
     
     // ========== Private Methods ==========

@@ -356,7 +356,7 @@ class AROverlays extends StatelessWidget {
     );
   }
 
-  /// Construit le bouton pour activer/désactiver l'effet 3D sur image augmentée
+  /// Construit le bouton pour activer/désactiver le modèle 3D sur image augmentée
   Widget _buildAugmentedImage3DButton(BuildContext context) {
     return Material(
       color: Colors.transparent,
@@ -385,7 +385,7 @@ class AROverlays extends StatelessWidget {
             ),
           ),
           child: Icon(
-            isAugmentedImage3DActive ? Icons.blur_on : Icons.blur_off,
+            isAugmentedImage3DActive ? Icons.view_in_ar : Icons.view_in_ar_outlined,
             color: Colors.white,
             size: 26,
           ),
