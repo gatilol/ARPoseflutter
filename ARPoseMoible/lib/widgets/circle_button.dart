@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+/// A circular button widget used for AR controls
 class CircleButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onPressed;
@@ -27,7 +28,7 @@ class CircleButton extends StatelessWidget {
           width: size,
           height: size,
           decoration: BoxDecoration(
-            color: isPrimary ? Colors.white : (color ?? Colors.white).withValues(),
+            color: isPrimary ? Colors.white : (color ?? Colors.white),
             shape: BoxShape.circle,
             border: Border.all(
               color: isPrimary ? Colors.blue : (color ?? Colors.white),
@@ -35,14 +36,17 @@ class CircleButton extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(),
+                color: Colors.black.withValues(alpha: 0.3),
                 blurRadius: 10,
                 spreadRadius: 2,
               ),
             ],
           ),
-          child: Icon(icon, color: isPrimary ? Colors.blue : (color ?? Colors.black87),
-              size: isPrimary ? 40 : 28),
+          child: Icon(
+            icon,
+            color: isPrimary ? Colors.blue : (color ?? Colors.black87),
+            size: isPrimary ? 40 : 28,
+          ),
         ),
       ),
     );

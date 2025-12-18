@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:screenshot/screenshot.dart';
 import 'package:flutter/services.dart';
-import '../models/ar_state.dart';
-import '../models/ar_mode.dart';
-import '../services/ar_service.dart';
-import '../services/photo_service.dart';
-import '../widgets/ar_overlays.dart';
-import '../widgets/model_selector_menu.dart'; 
+import 'package:screenshot/screenshot.dart';
 import 'package:ar_flutter_plugin_2/widgets/ar_view.dart';
 import 'package:ar_flutter_plugin_2/datatypes/config_planedetection.dart';
 
+import '../config/app_config.dart';
+import '../models/ar_state.dart';
+import '../models/ar_mode.dart';
+import '../models/face_filter_type.dart';
+import '../models/model_3d.dart';
+import '../models/augmented_image.dart';
+import '../services/ar_service.dart';
+import '../services/photo_service.dart';
+import '../utils/snackbar_helper.dart';
+import '../widgets/ar_overlays.dart';
+import '../widgets/model_selector_menu.dart';
+
+/// Main AR screen with World AR and Face AR modes
 class ArScreen extends StatefulWidget {
   const ArScreen({super.key});
 
@@ -23,173 +30,184 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
   late final PhotoService photoService;
   final ScreenshotController screenshotController = ScreenshotController();
 
-  // État du menu et modèles sélectionnés
+  // Model menu state
   bool isModelMenuOpen = false;
-  
-  // ========== World AR Model ==========
-  String currentWorldModelPath = 'assets/models/world/eva_01_esg.glb';
-  final String reticlePath = 'assets/models/test_reticle.glb';
-  
-  // ========== Face AR Filter ==========
-  String currentFaceModelPath = '';      // Modèle 3D (lunettes, masques...)
-  String currentMakeupPath = '';         // Texture makeup (freckles, etc...)
 
-  // ========== FACE AR STATE ==========
+  // World AR model paths
+  String currentWorldModelPath = kDefaultWorldModelPath;
+
+  // Face AR filter paths
+  String currentFaceModelPath = '';
+  String currentMakeupPath = '';
+
+  // Camera switch animation
   bool _isSwitchingCamera = false;
   late AnimationController _switchAnimationController;
   late Animation<double> _switchAnimation;
-  // ====================================
 
-  // ========== AUGMENTED IMAGE 3D STATE ==========
+  // Augmented Image state
   bool _isAugmentedImageDetected = false;
   bool _isAugmentedImage3DActive = false;
   String? _detectedImageName;
-  // ==============================================
 
   @override
   void initState() {
     super.initState();
+
     arState = ARState();
     arService = ARService(
-        state: arState,
-        modelPath: currentWorldModelPath,
-        reticlePath: reticlePath
+      state: arState,
+      modelPath: currentWorldModelPath,
+      reticlePath: kReticlePath,
     );
     photoService = PhotoService(state: arState);
 
-    // Animation pour le switch de caméra
+    // Camera switch animation setup
     _switchAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
+      duration: kCameraSwitchDuration,
       vsync: this,
     );
     _switchAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _switchAnimationController, curve: Curves.easeInOut),
+      CurvedAnimation(
+        parent: _switchAnimationController,
+        curve: Curves.easeInOut,
+      ),
     );
   }
 
-  // ==================================================================================
-  // ========================= SÉLECTION DE MODÈLE ====================================
-  // ==================================================================================
+  @override
+  void dispose() {
+    _switchAnimationController.dispose();
+    arService.dispose();
+    super.dispose();
+  }
 
-  /// Méthode appelée quand un modèle est sélectionné (World AR ou Face AR)
+
+  // ──────────────────────────────────────────────────────────────
+  // Model Selection
+  // ──────────────────────────────────────────────────────────────
+
+  /// Handle model selection from the menu
   void _onModelSelected(Model3D model) {
     HapticFeedback.lightImpact();
 
     if (arState.isWorldMode) {
-      // ========== World AR : Mise à jour du modèle 3D ==========
+      // World AR: Update 3D model
       setState(() {
         currentWorldModelPath = model.path;
       });
       arService.updateModelPath(currentWorldModelPath);
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.view_in_ar, color: Colors.white),
-                const SizedBox(width: 12),
-                Text('Modèle "${model.name}" sélectionné'),
-              ],
-            ),
-            duration: const Duration(seconds: 2),
-            backgroundColor: Colors.blue,
-          ),
-        );
-      }
+
+      SnackBarHelper.show(
+        context,
+        message: 'Model "${model.name}" selected',
+        icon: Icons.view_in_ar,
+        color: Colors.blue,
+      );
     } else {
-      // ========== Face AR : Appliquer le filtre facial ==========
-      // _applyFaceFilter met à jour les bonnes variables selon le type
+      // Face AR: Apply face filter
       _applyFaceFilter(model);
     }
   }
 
-  /// Applique un filtre facial selon son type (none, model3D, makeup)
-  /// Les modèles 3D et les maquillages peuvent être combinés
+  /// Apply a face filter based on its type
   Future<void> _applyFaceFilter(Model3D model) async {
     try {
       switch (model.filterType) {
         case FaceFilterType.none:
-          // Supprimer tous les filtres
           await _clearAllFaceFilters();
-          _showFilterSnackBar('Tous les filtres supprimés', Icons.face, Colors.grey);
+          if (!mounted) return;
+          SnackBarHelper.show(
+            context,
+            message: 'All filters removed',
+            icon: Icons.face,
+            color: Colors.grey,
+          );
           break;
-          
+
         case FaceFilterType.model3D:
-          // Appliquer le modèle 3D (sans toucher au makeup)
           final success = await arService.setFaceModel(model.path);
+          if (!mounted) return;
           if (success) {
             setState(() {
               currentFaceModelPath = model.path;
             });
           }
-          _showFilterSnackBar(
-            success ? 'Modèle "${model.name}" appliqué' : 'Erreur lors de l\'application',
-            success ? Icons.view_in_ar : Icons.error_outline,
-            success ? Colors.purple : Colors.red,
+          SnackBarHelper.show(
+            context,
+            message: success ? 'Model "${model.name}" applied' : 'Error applying model',
+            icon: success ? Icons.view_in_ar : Icons.error_outline,
+            color: success ? Colors.purple : Colors.red,
           );
           break;
-          
+
         case FaceFilterType.makeup:
-          // Appliquer la texture makeup (sans toucher au modèle 3D)
-          final success = await arService.sessionManager?.setFaceMakeupTexture(model.path) ?? false;
+          final success = await arService.sessionManager
+              .setFaceMakeupTexture(model.path);
+          if (!mounted) return;
           if (success) {
             setState(() {
               currentMakeupPath = model.path;
             });
           }
-          _showFilterSnackBar(
-            success ? 'Maquillage "${model.name}" appliqué' : 'Erreur lors de l\'application',
-            success ? Icons.brush : Icons.error_outline,
-            success ? Colors.pink : Colors.red,
+          SnackBarHelper.show(
+            context,
+            message: success ? 'Makeup "${model.name}" applied' : 'Error applying makeup',
+            icon: success ? Icons.brush : Icons.error_outline,
+            color: success ? Colors.pink : Colors.red,
           );
           break;
       }
     } catch (e) {
       debugPrint('Error applying face filter: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      SnackBarHelper.showError(context, message: 'Error: $e');
     }
   }
 
-  /// Supprime tous les filtres faciaux (modèle 3D + texture)
+  /// Clear all face filters (3D model + makeup)
   Future<void> _clearAllFaceFilters() async {
     await arService.clearFaceModel();
-    await arService.sessionManager?.clearFaceMakeupTexture();
+    await arService.sessionManager.clearFaceMakeupTexture();
     setState(() {
       currentFaceModelPath = '';
       currentMakeupPath = '';
     });
   }
 
-  /// Supprime un type de filtre spécifique (appelé depuis le bouton ❌ du menu)
+  /// Remove a specific filter type (called from menu's remove button)
   Future<void> _onFilterRemoved(FaceFilterType filterType) async {
     try {
       switch (filterType) {
         case FaceFilterType.model3D:
           await arService.clearFaceModel();
+          if (!mounted) return;
           setState(() {
             currentFaceModelPath = '';
           });
-          _showFilterSnackBar('Accessoire 3D supprimé', Icons.view_in_ar, Colors.grey);
+          SnackBarHelper.show(
+            context,
+            message: '3D accessory removed',
+            icon: Icons.view_in_ar,
+            color: Colors.grey,
+          );
           break;
-          
+
         case FaceFilterType.makeup:
-          await arService.sessionManager?.clearFaceMakeupTexture();
+          await arService.sessionManager.clearFaceMakeupTexture();
+          if (!mounted) return;
           setState(() {
             currentMakeupPath = '';
           });
-          _showFilterSnackBar('Maquillage supprimé', Icons.brush, Colors.grey);
+          SnackBarHelper.show(
+            context,
+            message: 'Makeup removed',
+            icon: Icons.brush,
+            color: Colors.grey,
+          );
           break;
-          
+
         case FaceFilterType.none:
-          // Rien à faire
           break;
       }
     } catch (e) {
@@ -197,29 +215,12 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
     }
   }
 
-  /// Affiche un SnackBar pour les filtres
-  void _showFilterSnackBar(String message, IconData icon, Color color) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(icon, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(child: Text(message)),
-          ],
-        ),
-        duration: const Duration(seconds: 2),
-        backgroundColor: color,
-      ),
-    );
-  }
 
-  // ==================================================================================
-  // ========================= MÉTHODES SWITCH CAMÉRA =================================
-  // ==================================================================================
+  // ──────────────────────────────────────────────────────────────
+  // Camera Mode Switching
+  // ──────────────────────────────────────────────────────────────
 
-  /// Bascule entre les modes World AR et Face AR
+  /// Toggle between World AR and Face AR modes
   Future<void> _toggleCameraMode() async {
     if (_isSwitchingCamera) return;
 
@@ -227,9 +228,7 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
       _isSwitchingCamera = true;
     });
 
-    // Animation de transition
     await _switchAnimationController.forward();
-
     HapticFeedback.mediumImpact();
 
     try {
@@ -237,76 +236,44 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
 
       if (success && mounted) {
         final newMode = arService.currentMode;
-        
-        // Si on passe en Face AR, réappliquer les filtres sélectionnés
+
         if (newMode == ArMode.face) {
-          // Reset augmented image state
+          // Switched to Face AR: Reset augmented image state
           _isAugmentedImageDetected = false;
           _isAugmentedImage3DActive = false;
           _detectedImageName = null;
-          
-          // Réappliquer le modèle 3D si présent
+
+          // Reapply face filters if previously set
           if (currentFaceModelPath.isNotEmpty) {
             await arService.setFaceModel(currentFaceModelPath);
           }
-          // Réappliquer le makeup si présent
           if (currentMakeupPath.isNotEmpty) {
-            await arService.sessionManager?.setFaceMakeupTexture(currentMakeupPath);
+            await arService.sessionManager.setFaceMakeupTexture(currentMakeupPath);
           }
         } else {
-          // Si on repasse en World AR, reconfigurer les images augmentées
+          // Switched to World AR: Setup augmented images
           _setupAugmentedImages();
         }
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(
-                  newMode == ArMode.face ? Icons.face : Icons.view_in_ar,
-                  color: Colors.white,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  newMode == ArMode.face 
-                    ? 'Mode Face AR activé' 
-                    : 'Mode World AR activé',
-                ),
-              ],
-            ),
-            duration: const Duration(seconds: 2),
-            backgroundColor: newMode == ArMode.face ? Colors.purple : Colors.blue,
-          ),
+
+        if (!mounted) return;
+        SnackBarHelper.show(
+          context,
+          message: newMode == ArMode.face ? 'Face AR mode activated' : 'World AR mode activated',
+          icon: newMode == ArMode.face ? Icons.face : Icons.view_in_ar,
+          color: newMode == ArMode.face ? Colors.purple : Colors.blue,
         );
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.info_outline, color: Colors.white),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Face AR non disponible sur cet appareil',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            duration: Duration(seconds: 3),
-            backgroundColor: Colors.orange,
-          ),
+        SnackBarHelper.show(
+          context,
+          message: 'Face AR not available on this device',
+          icon: Icons.info_outline,
+          color: Colors.orange,
         );
       }
     } catch (e) {
       debugPrint('Error toggling camera mode: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        SnackBarHelper.showError(context, message: 'Error: $e');
       }
     } finally {
       await _switchAnimationController.reverse();
@@ -318,143 +285,97 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
     }
   }
 
-  // ==================================================================================
-  // ========================= AUGMENTED IMAGE 3D =====================================
-  // ==================================================================================
 
-  /// Configure la détection d'images augmentées
+  // ──────────────────────────────────────────────────────────────
+  // Augmented Image 3D
+  // ──────────────────────────────────────────────────────────────
+
+  /// Setup augmented image detection
   Future<void> _setupAugmentedImages() async {
-    // Attendre que le sessionManager soit prêt
-    await Future.delayed(const Duration(milliseconds: 500));
-    
+    // Wait for session manager to be ready
+    await Future.delayed(kAugmentedImageSetupDelay);
+
     final sessionManager = arService.sessionManager;
-    if (sessionManager == null) return;
 
-    // Charger les images
-    final result = await sessionManager.loadAugmentedImages([
-      {
-        'name': 'poster_01',
-        'imagePath': 'assets/ar_images/poster_01/image.png',
-        'modelPath': 'assets/ar_images/poster_01/model.glb',
-        'physicalWidth': 0.20,       // 20cm - ajuster selon taille réelle
-        'modelScale': 0.1,           // Échelle du modèle 3D
-        'modelYOffset': -0.05,         // Décalage vertical (négatif = plus bas)
-        'modelRotationOffset': 0.0,  // Rotation supplémentaire en degrés
-      },
-    ]);
+    // Load augmented images configuration
+    final imageConfigs = augmentedImages.map((img) => img.toMap()).toList();
+    final result = await sessionManager.loadAugmentedImages(imageConfigs);
 
-    if (result != null && result['success'] == true) {
-      debugPrint('✅ Augmented images loaded: ${result['loadedCount']}');
-    } else {
-      debugPrint('⚠️ Failed to load augmented images');
+    if (result == null || result['success'] != true) {
+      debugPrint('Failed to load augmented images');
     }
 
-    // Configurer le callback de détection
+    // Setup detection callback
     sessionManager.onAugmentedImageDetected = (imageName, detected) {
-      debugPrint('🎯 Image "$imageName": ${detected ? "DETECTED" : "LOST"}');
-      
       if (mounted) {
         setState(() {
           _isAugmentedImageDetected = detected;
           _detectedImageName = detected ? imageName : null;
-          
-          // Désactiver l'effet 3D si l'image est perdue
+
+          // Disable 3D effect if image is lost
           if (!detected && _isAugmentedImage3DActive) {
             _isAugmentedImage3DActive = false;
           }
         });
 
-        // Notification à l'utilisateur
         if (detected) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.image_search, color: Colors.white),
-                  const SizedBox(width: 12),
-                  Text('Image "$imageName" détectée !'),
-                ],
-              ),
-              duration: const Duration(seconds: 2),
-              backgroundColor: Colors.cyan,
-            ),
+          SnackBarHelper.show(
+            context,
+            message: 'Image "$imageName" detected!',
+            icon: Icons.image_search,
+            color: Colors.cyan,
           );
         }
       }
     };
   }
 
-  /// Active/désactive le modèle 3D sur l'image détectée
+  /// Toggle 3D model on detected augmented image
   Future<void> _toggleAugmentedImage3D() async {
     if (_detectedImageName == null) return;
 
     final sessionManager = arService.sessionManager;
-    if (sessionManager == null) return;
-
     HapticFeedback.mediumImpact();
 
     if (_isAugmentedImage3DActive) {
-      // Désactiver
+      // Disable 3D effect
       final success = await sessionManager.disableAugmentedImage3D();
       if (success && mounted) {
         setState(() {
           _isAugmentedImage3DActive = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.view_in_ar_outlined, color: Colors.white),
-                SizedBox(width: 12),
-                Text('Modèle 3D désactivé'),
-              ],
-            ),
-            duration: Duration(seconds: 1),
-            backgroundColor: Colors.grey,
-          ),
+        SnackBarHelper.show(
+          context,
+          message: '3D model disabled',
+          icon: Icons.view_in_ar_outlined,
+          color: Colors.grey,
         );
       }
     } else {
-      // Activer
+      // Enable 3D effect
       final success = await sessionManager.enableAugmentedImage3D(_detectedImageName!);
       if (success && mounted) {
         setState(() {
           _isAugmentedImage3DActive = true;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.view_in_ar, color: Colors.white),
-                SizedBox(width: 12),
-                Text('Modèle 3D activé !'),
-              ],
-            ),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
+        SnackBarHelper.showSuccess(
+          context,
+          message: '3D model activated!',
+          icon: Icons.view_in_ar,
         );
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.error_outline, color: Colors.white),
-                SizedBox(width: 12),
-                Text('Erreur activation modèle 3D'),
-              ],
-            ),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.red,
-          ),
+        SnackBarHelper.showError(
+          context,
+          message: 'Error activating 3D model',
         );
       }
     }
   }
 
-  // ==================================================================================
-  // ========================= BUILD =================================================
-  // ==================================================================================
+
+  // ──────────────────────────────────────────────────────────────
+  // Build
+  // ──────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -467,19 +388,18 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
             controller: screenshotController,
             child: Stack(
               children: [
-                // Vue AR
+                // AR View
                 ARView(
                   onARViewCreated: (sessionManager, objectManager, anchorManager, locationManager) {
                     arService.onARViewCreated(sessionManager, objectManager, anchorManager);
-                    // Setup augmented image detection
                     _setupAugmentedImages();
                   },
-                  planeDetectionConfig: arState.isWorldMode 
-                    ? PlaneDetectionConfig.horizontal 
-                    : PlaneDetectionConfig.none,
+                  planeDetectionConfig: arState.isWorldMode
+                      ? PlaneDetectionConfig.horizontal
+                      : PlaneDetectionConfig.none,
                 ),
 
-                // Overlay de transition lors du switch
+                // Camera switch transition overlay
                 if (_isSwitchingCamera)
                   AnimatedBuilder(
                     animation: _switchAnimation,
@@ -490,12 +410,10 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const CircularProgressIndicator(
-                                color: Colors.white,
-                              ),
+                              const CircularProgressIndicator(color: Colors.white),
                               const SizedBox(height: 16),
                               Text(
-                                'Changement de caméra...',
+                                'Switching camera...',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: _switchAnimation.value),
                                   fontSize: 16,
@@ -508,30 +426,18 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                     },
                   ),
 
-                // Overlays AR
+                // AR Overlays
                 if (!_isSwitchingCamera)
                   AROverlays(
                     state: arState,
                     onClose: () => Navigator.pop(context),
                     onTakePhoto: () async {
-                      try {
-                        await photoService.takeAndSavePhoto(screenshotController, context);
-                      } catch (e) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Erreur: $e'),
-                              backgroundColor: Colors.red
-                            )
-                          );
-                        }
-                      }
+                      await photoService.takeAndSavePhoto(screenshotController, context);
                     },
                     onDelete: () async {
                       if (arState.isWorldMode) {
                         await arService.removeAllModels();
                       } else {
-                        // En mode Face AR, supprimer tous les filtres
                         await _clearAllFaceFilters();
                       }
                     },
@@ -553,14 +459,12 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                     },
                     onSwitchCamera: _toggleCameraMode,
                     isSwitchingCamera: _isSwitchingCamera,
-                    // ========== Augmented Image 3D ==========
                     isAugmentedImageDetected: _isAugmentedImageDetected,
                     isAugmentedImage3DActive: _isAugmentedImage3DActive,
                     onToggleAugmentedImage3D: _toggleAugmentedImage3D,
-                    // ========================================
                   ),
 
-                // Menu de sélection des modèles
+                // Model selector menu
                 ModelSelectorMenu(
                   isOpen: isModelMenuOpen,
                   onClose: () {
@@ -570,9 +474,9 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                   },
                   onModelSelected: _onModelSelected,
                   onFilterRemoved: _onFilterRemoved,
-                  currentModelPath: arState.isWorldMode 
-                    ? currentWorldModelPath 
-                    : currentFaceModelPath,
+                  currentModelPath: arState.isWorldMode
+                      ? currentWorldModelPath
+                      : currentFaceModelPath,
                   currentMakeupPath: currentMakeupPath,
                   isWorldMode: arState.isWorldMode,
                 ),
@@ -582,12 +486,5 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
         },
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _switchAnimationController.dispose();
-    arService.dispose();
-    super.dispose();
   }
 }

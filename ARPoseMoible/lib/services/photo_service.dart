@@ -1,83 +1,71 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:gal/gal.dart';
 import 'package:screenshot/screenshot.dart';
-import 'package:flutter/services.dart';
-import '../models/ar_state.dart';
 
+import '../config/app_config.dart';
+import '../models/ar_state.dart';
+import '../utils/snackbar_helper.dart';
+
+/// Service responsible for capturing and saving AR photos
 class PhotoService {
   final ARState state;
 
   PhotoService({required this.state});
 
-  Future<void> takeAndSavePhoto(ScreenshotController controller,BuildContext context) async {
+  /// Capture the current AR view and save it to the device gallery
+  Future<void> takeAndSavePhoto(
+    ScreenshotController controller,
+    BuildContext context,
+  ) async {
     try {
-      // 1. Masquer overlays
+      // Hide UI overlays during capture
       state.setCapturing(true);
 
-      // 2. Attendre la prochaine frame proprement
+      // Wait for the next frame to ensure UI is hidden
       await Future<void>.delayed(Duration.zero);
       await WidgetsBinding.instance.endOfFrame;
 
-      // 3. Capturer
+      // Capture screenshot
       final Uint8List? bytes = await controller.capture();
       state.setCapturing(false);
 
       if (bytes == null) throw Exception('Capture failed');
 
-      // VIBRATION lors de la capture
+      // Haptic feedback on capture
       HapticFeedback.mediumImpact();
 
-      // 4. Sauvegarder
+      // Save to temporary file
       final directory = await getTemporaryDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final imagePath = path.join(directory.path, 'ar_photo_$timestamp.png');
       final file = File(imagePath);
       await file.writeAsBytes(bytes);
 
+      // Save to gallery
       await Gal.putImage(imagePath);
 
-      //NOTIFICATION de succès
+      // Show success notification (longer duration for important feedback)
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 12),
-                Text('Photo saved to gallery'),
-              ],
-            ),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
+        SnackBarHelper.showSuccess(
+          context,
+          message: 'Photo saved to gallery',
+          duration: kSnackBarDurationLong,
         );
       }
-
-
     } catch (e) {
       state.setCapturing(false);
-      //Notification d'erreur
+
+      // Show error notification
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.error, color: Colors.white),
-                SizedBox(width: 12),
-                Text('Error while saving'),
-              ],
-            ),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
+        SnackBarHelper.showError(
+          context,
+          message: 'Error while saving',
         );
       }
-
 
       rethrow;
     }

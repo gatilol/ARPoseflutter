@@ -1,91 +1,17 @@
 import 'package:flutter/material.dart';
 
-enum FaceFilterType {
-  none,      // Aucun filtre
-  model3D,   // Modèle 3D GLB
-  makeup,    // Texture de maquillage PNG
-}
+import '../models/face_filter_type.dart';
+import '../models/model_3d.dart';
 
-class Model3D {
-  final String name;
-  final String path;
-  final IconData icon;
-  final String? description;
-  final FaceFilterType filterType;
-
-  const Model3D({
-    required this.name,
-    required this.path,
-    required this.icon,
-    this.description,
-    this.filterType = FaceFilterType.model3D,
-  });
-}
-
+/// Sliding menu for selecting 3D models and face filters
 class ModelSelectorMenu extends StatelessWidget {
   final bool isOpen;
   final VoidCallback onClose;
   final Function(Model3D) onModelSelected;
-  final Function(FaceFilterType)? onFilterRemoved;  // Nouveau: pour supprimer un filtre
+  final Function(FaceFilterType)? onFilterRemoved;
   final String? currentModelPath;
   final String? currentMakeupPath;
   final bool isWorldMode;
-
-  // ========== Modèles World AR ==========
-  static const List<Model3D> worldModels = [
-    Model3D(
-      name: 'EVA-01',
-      path: 'assets/models/world/eva_01_esg.glb',
-      icon: Icons.android,
-      description: 'Evangelion Unit-01',
-    ),
-    Model3D(
-      name: 'EVA-02',
-      path: 'assets/models/world/evangelion_unit-02.glb',
-      icon: Icons.android,
-      description: 'Evangelion Unit-02',
-    ),
-    Model3D(
-      name: 'Human',
-      path: 'assets/models/world/human_body_base_cartoon.glb',
-      icon: Icons.accessibility_new,
-      description: 'Modèle humain cartoon',
-    ),
-  ];
-
-  // ========== Filtres Face AR ==========
-  static const List<Model3D> faceModels = [
-    // === Modèles 3D ===
-    Model3D(
-      name: 'Lunettes',
-      path: 'assets/models/face/3D/fox.glb',
-      icon: Icons.visibility,
-      description: 'Lunettes de soleil',
-      filterType: FaceFilterType.model3D,
-    ),
-    // === Maquillages (textures PNG) ===
-    Model3D(
-      name: 'Freckles',
-      path: 'assets/models/face/makeup/freckles.png',
-      icon: Icons.face_retouching_natural,
-      description: 'Taches de rousseur',
-      filterType: FaceFilterType.makeup,
-    ),
-    Model3D(
-      name: 'Face Paint',
-      path: 'assets/models/face/makeup/face.png',
-      icon: Icons.brush,
-      description: 'Peinture faciale',
-      filterType: FaceFilterType.makeup,
-    ),
-    Model3D(
-      name: 'Canonical',
-      path: 'assets/models/face/makeup/canonical_face.png',
-      icon: Icons.grid_on,
-      description: 'Template UV (test)',
-      filterType: FaceFilterType.makeup,
-    ),
-  ];
 
   const ModelSelectorMenu({
     required this.isOpen,
@@ -98,14 +24,14 @@ class ModelSelectorMenu extends StatelessWidget {
     super.key,
   });
 
-  // Retourne la liste appropriée selon le mode
-  List<Model3D> get currentModels => isWorldMode ? worldModels : faceModels;
+  /// Returns the appropriate model list based on current mode
+  List<Model3D> get currentModels => isWorldMode ? worldModels : faceFilters;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Overlay semi-transparent
+        // Semi-transparent overlay
         if (isOpen)
           GestureDetector(
             onTap: onClose,
@@ -114,7 +40,7 @@ class ModelSelectorMenu extends StatelessWidget {
             ),
           ),
 
-        // Menu qui slide
+        // Sliding menu panel
         AnimatedPositioned(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
@@ -136,19 +62,14 @@ class ModelSelectorMenu extends StatelessWidget {
             child: SafeArea(
               child: Column(
                 children: [
-                  // Header
                   _buildHeader(),
-
-                  // Liste des modèles
                   Expanded(
-                    child: currentModels.isEmpty 
-                      ? _buildEmptyState()
-                      : isWorldMode 
-                        ? _buildSimpleList()
-                        : _buildCategorizedList(),
+                    child: currentModels.isEmpty
+                        ? _buildEmptyState()
+                        : isWorldMode
+                            ? _buildSimpleList()
+                            : _buildCategorizedList(),
                   ),
-
-                  // Footer info
                   _buildFooter(),
                 ],
               ),
@@ -159,14 +80,18 @@ class ModelSelectorMenu extends StatelessWidget {
     );
   }
 
-  /// Header du menu
+
+  // ──────────────────────────────────────────────────────────────
+  // Header
+  // ──────────────────────────────────────────────────────────────
+
   Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isWorldMode 
-          ? Colors.blue.withValues(alpha: 0.1)
-          : Colors.purple.withValues(alpha: 0.1),
+        color: isWorldMode
+            ? Colors.blue.withValues(alpha: 0.1)
+            : Colors.purple.withValues(alpha: 0.1),
         border: Border(
           bottom: BorderSide(
             color: Colors.white.withValues(alpha: 0.1),
@@ -175,12 +100,13 @@ class ModelSelectorMenu extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // Icon container
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: isWorldMode 
-                ? Colors.blue.withValues(alpha: 0.2)
-                : Colors.purple.withValues(alpha: 0.2),
+              color: isWorldMode
+                  ? Colors.blue.withValues(alpha: 0.2)
+                  : Colors.purple.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -189,13 +115,16 @@ class ModelSelectorMenu extends StatelessWidget {
               size: 24,
             ),
           ),
+
           const SizedBox(width: 12),
+
+          // Title and count
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isWorldMode ? 'Modèles 3D' : 'Filtres Visage',
+                  isWorldMode ? '3D Models' : 'Face Filters',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -204,9 +133,9 @@ class ModelSelectorMenu extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  isWorldMode 
-                    ? '${worldModels.length} modèles disponibles'
-                    : '${faceModels.length} filtres disponibles',
+                  isWorldMode
+                      ? '${worldModels.length} models available'
+                      : '${faceFilters.length} filters available',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.6),
                     fontSize: 12,
@@ -215,6 +144,8 @@ class ModelSelectorMenu extends StatelessWidget {
               ],
             ),
           ),
+
+          // Close button
           IconButton(
             icon: const Icon(Icons.close, color: Colors.white),
             onPressed: onClose,
@@ -224,7 +155,12 @@ class ModelSelectorMenu extends StatelessWidget {
     );
   }
 
-  /// Liste simple pour World AR
+
+  // ──────────────────────────────────────────────────────────────
+  // Lists
+  // ──────────────────────────────────────────────────────────────
+
+  /// Simple list for World AR models
   Widget _buildSimpleList() {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -237,36 +173,48 @@ class ModelSelectorMenu extends StatelessWidget {
     );
   }
 
-  /// Liste catégorisée pour Face AR
+  /// Categorized list for Face AR filters (3D models + makeup)
   Widget _buildCategorizedList() {
-    final modelFilters = faceModels.where((m) => m.filterType == FaceFilterType.model3D).toList();
-    final makeupFilters = faceModels.where((m) => m.filterType == FaceFilterType.makeup).toList();
+    final modelFilters = faceFilters
+        .where((m) => m.filterType == FaceFilterType.model3D)
+        .toList();
+    final makeupFilters = faceFilters
+        .where((m) => m.filterType == FaceFilterType.makeup)
+        .toList();
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
-        // Section: Accessoires 3D - utilise currentModelPath
+        // 3D Accessories section
         if (modelFilters.isNotEmpty) ...[
-          _buildSectionHeader('Accessoires 3D', Icons.view_in_ar),
-          ...modelFilters.map((m) => _buildModelItem(m, currentModelPath == m.path)),
+          _buildSectionHeader('3D Accessories', Icons.view_in_ar),
+          ...modelFilters.map(
+            (m) => _buildModelItem(m, currentModelPath == m.path),
+          ),
         ],
-        
-        // Section: Maquillage - utilise currentMakeupPath
+
+        // Makeup section
         if (makeupFilters.isNotEmpty) ...[
-          _buildSectionHeader('Maquillage', Icons.brush),
-          ...makeupFilters.map((m) => _buildModelItem(m, currentMakeupPath == m.path)),
+          _buildSectionHeader('Makeup', Icons.brush),
+          ...makeupFilters.map(
+            (m) => _buildModelItem(m, currentMakeupPath == m.path),
+          ),
         ],
       ],
     );
   }
 
-  /// Header de section
+  /// Section header for categorized list
   Widget _buildSectionHeader(String title, IconData icon) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
         children: [
-          Icon(icon, color: Colors.purple.withValues(alpha: 0.7), size: 16),
+          Icon(
+            icon,
+            color: Colors.purple.withValues(alpha: 0.7),
+            size: 16,
+          ),
           const SizedBox(width: 8),
           Text(
             title,
@@ -282,11 +230,15 @@ class ModelSelectorMenu extends StatelessWidget {
     );
   }
 
-  /// Item de modèle dans la liste
+
+  // ──────────────────────────────────────────────────────────────
+  // Model Item
+  // ──────────────────────────────────────────────────────────────
+
   Widget _buildModelItem(Model3D model, bool isSelected) {
     final accentColor = isWorldMode ? Colors.blue : Colors.purple;
-    
-    // Couleur d'icône selon le type
+
+    // Icon background color based on type and selection
     Color iconBgColor;
     if (isSelected) {
       iconBgColor = accentColor;
@@ -295,12 +247,9 @@ class ModelSelectorMenu extends StatelessWidget {
     } else {
       iconBgColor = Colors.white.withValues(alpha: 0.1);
     }
-    
+
     return Container(
-      margin: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 4,
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
         color: isSelected
             ? accentColor.withValues(alpha: 0.2)
@@ -312,18 +261,17 @@ class ModelSelectorMenu extends StatelessWidget {
         ),
       ),
       child: ListTile(
+        // Icon
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: iconBgColor,
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(
-            model.icon,
-            color: Colors.white,
-            size: 24,
-          ),
+          child: Icon(model.icon, color: Colors.white, size: 24),
         ),
+
+        // Title
         title: Text(
           model.name,
           style: const TextStyle(
@@ -332,54 +280,34 @@ class ModelSelectorMenu extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+
+        // Description
         subtitle: model.description != null
-          ? Text(
-              model.description!,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
-                fontSize: 12,
-              ),
-            )
-          : null,
+            ? Text(
+                model.description!,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 12,
+                ),
+              )
+            : null,
+
+        // Trailing (checkmark and/or remove button)
         trailing: isSelected
             ? Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.check_circle, color: accentColor),
-                  // Bouton supprimer uniquement en Face AR
+
+                  // Remove button (Face AR only)
                   if (!isWorldMode) ...[
                     const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: () {
-                        if (onFilterRemoved != null) {
-                          onFilterRemoved!(model.filterType);
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: Colors.red.withValues(alpha: 0.5),
-                            width: 1,
-                          ),
-                        ),
-                        child: const Icon(
-                          Icons.close,
-                          color: Colors.red,
-                          size: 18,
-                        ),
-                      ),
-                    ),
+                    _buildRemoveButton(model.filterType),
                   ],
                 ],
               )
-            : const Icon(
-                Icons.arrow_forward_ios,
-                color: Colors.white54,
-                size: 16,
-              ),
+            : const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
+
         onTap: () {
           onModelSelected(model);
           onClose();
@@ -388,7 +316,34 @@ class ModelSelectorMenu extends StatelessWidget {
     );
   }
 
-  /// État vide si pas de modèles
+  /// Remove button for active filters (Face AR only)
+  Widget _buildRemoveButton(FaceFilterType filterType) {
+    return GestureDetector(
+      onTap: () {
+        if (onFilterRemoved != null) {
+          onFilterRemoved!(filterType);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: Colors.red.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: Colors.red.withValues(alpha: 0.5),
+            width: 1,
+          ),
+        ),
+        child: const Icon(Icons.close, color: Colors.red, size: 18),
+      ),
+    );
+  }
+
+
+  // ──────────────────────────────────────────────────────────────
+  // Empty State & Footer
+  // ──────────────────────────────────────────────────────────────
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -401,9 +356,7 @@ class ModelSelectorMenu extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            isWorldMode 
-              ? 'Aucun modèle 3D disponible'
-              : 'Aucun filtre disponible',
+            isWorldMode ? 'No 3D models available' : 'No filters available',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.6),
               fontSize: 16,
@@ -414,7 +367,6 @@ class ModelSelectorMenu extends StatelessWidget {
     );
   }
 
-  /// Footer du menu
   Widget _buildFooter() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -435,9 +387,9 @@ class ModelSelectorMenu extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              isWorldMode 
-                ? 'Sélectionnez un modèle avant de placer'
-                : 'Sélectionnez un filtre pour votre visage',
+              isWorldMode
+                  ? 'Select a model before placing'
+                  : 'Select a filter for your face',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.6),
                 fontSize: 12,
