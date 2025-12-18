@@ -292,6 +292,9 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
 
   /// Setup augmented image detection
   Future<void> _setupAugmentedImages() async {
+    // Skip if feature is disabled
+    if (!kEnableAugmentedImages) return;
+
     // Wait for session manager to be ready
     await Future.delayed(kAugmentedImageSetupDelay);
 
@@ -432,7 +435,11 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                     state: arState,
                     onClose: () => Navigator.pop(context),
                     onTakePhoto: () async {
-                      await photoService.takeAndSavePhoto(screenshotController, context);
+                      try {
+                        await photoService.takeAndSavePhoto(screenshotController, context);
+                      } catch (e) {
+                        SnackBarHelper.showError(context, message: 'Error: $e');
+                      }
                     },
                     onDelete: () async {
                       if (arState.isWorldMode) {

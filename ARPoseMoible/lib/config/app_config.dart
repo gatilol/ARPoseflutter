@@ -41,6 +41,9 @@ const String kWebViewUrl = 'http://10.0.2.2:8000';
 // AR Settings
 // ──────────────────────────────────────────────────────────────
 
+/// Enable/disable augmented image detection feature
+const bool kEnableAugmentedImages = false;
+
 /// Reticle scale
 const double kReticleScale = 0.15;
 
