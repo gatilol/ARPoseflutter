@@ -13,73 +13,88 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late InAppWebViewController webViewController;
+  InAppWebViewController? webViewController;
   bool isLoading = true;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Useya Land'),
-        actions: [
-          // Direct AR access button (for testing)
-          IconButton(
-            icon: const Icon(Icons.camera_alt),
-            onPressed: _openARCamera,
-            tooltip: 'Open AR Camera',
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          // WebView
-          InAppWebView(
-            initialUrlRequest: URLRequest(
-              url: WebUri(kWebViewUrl),
-            ),
-            initialSettings: InAppWebViewSettings(
-              javaScriptEnabled: true,
-              domStorageEnabled: true,
-              allowFileAccess: true,
-              allowContentAccess: true,
-            ),
-            onWebViewCreated: _onWebViewCreated,
-            onLoadStart: (controller, url) {
-              setState(() {
-                isLoading = true;
-              });
-            },
-            onLoadStop: (controller, url) {
-              setState(() {
-                isLoading = false;
-              });
-            },
-            onConsoleMessage: (controller, consoleMessage) {
-              debugPrint('WebView Console: ${consoleMessage.message}');
-            },
-          ),
+    return WillPopScope(
+      onWillPop: _onAndroidBackPressed,
+      child: Scaffold(
+        body: Stack(
+          children: [
+            InAppWebView(
+              initialUrlRequest: URLRequest(
+                url: WebUri(kWebViewUrl),
+              ),
+              initialSettings: InAppWebViewSettings(
+                javaScriptEnabled: true,
+                domStorageEnabled: true,
+                allowFileAccess: true,
+                allowContentAccess: true,
+              ),
 
-          // Loading indicator
-          if (isLoading)
-            const Center(
-              child: CircularProgressIndicator(),
+              onWebViewCreated: _onWebViewCreated,
+
+              /// INTERCEPTION flutter://
+              shouldOverrideUrlLoading: (controller, navigationAction) async {
+                final uri = navigationAction.request.url;
+
+                if (uri != null && uri.scheme == 'flutter') {
+                  _handleFlutterLink(uri);
+                  return NavigationActionPolicy.CANCEL;
+                }
+
+                return NavigationActionPolicy.ALLOW;
+              },
+
+              onLoadStart: (controller, url) {
+                setState(() => isLoading = true);
+              },
+              onLoadStop: (controller, url) {
+                setState(() => isLoading = false);
+              },
+              onConsoleMessage: (controller, consoleMessage) {
+                debugPrint('WebView Console: ${consoleMessage.message}');
+              },
             ),
-        ],
+
+            if (isLoading)
+              const Center(
+                child: CircularProgressIndicator(),
+              ),
+          ],
+        ),
       ),
     );
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // Flutter URL Routing
+  // ──────────────────────────────────────────────────────────────
+
+  /// Handle flutter://Pelicular links
+  void _handleFlutterLink(Uri uri) {
+    debugPrint('Flutter link intercepted: $uri');
+
+    switch (uri.host.toLowerCase()) {
+      case 'pelicular':
+        _openARCamera();
+        break;
+
+      default:
+        debugPrint('Unknown Flutter route: ${uri.host}');
+    }
+  }
 
   // ──────────────────────────────────────────────────────────────
-  // WebView Handlers
+  // WebView Handlers (JS)
   // ──────────────────────────────────────────────────────────────
 
-  /// Configure WebView JavaScript handlers
   void _onWebViewCreated(InAppWebViewController controller) {
     webViewController = controller;
 
-    // Handler to open AR camera from web
-    webViewController.addJavaScriptHandler(
+    webViewController!.addJavaScriptHandler(
       handlerName: 'goToFlutterAR',
       callback: (args) {
         _openARCamera();
@@ -87,8 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
 
-    // Handler to open AR camera with a specific model
-    webViewController.addJavaScriptHandler(
+    webViewController!.addJavaScriptHandler(
       handlerName: 'openARWithModel',
       callback: (args) {
         if (args.isNotEmpty && args[0] is String) {
@@ -96,17 +110,15 @@ class _HomeScreenState extends State<HomeScreen> {
         } else {
           _openARCamera();
         }
-        return {'status': 'ok', 'modelUrl': args.isNotEmpty ? args[0] : null};
+        return {'status': 'ok'};
       },
     );
   }
-
 
   // ──────────────────────────────────────────────────────────────
   // Navigation
   // ──────────────────────────────────────────────────────────────
 
-  /// Open AR camera
   void _openARCamera() {
     Navigator.push(
       context,
@@ -120,22 +132,33 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  /// Open AR camera with a predefined 3D model
   void _openARCameraWithModel(String modelUrl) {
-    // TODO: Implement model preloading
+    // TODO: preload model
     _openARCamera();
   }
 
-  /// Send AR result (photo path) back to the web page
   void _sendResultToWebView(Map result) {
-    if (result.containsKey('imagePath')) {
+    if (result.containsKey('imagePath') && webViewController != null) {
       final imagePath = result['imagePath'];
 
-      webViewController.evaluateJavascript(source: '''
+      webViewController!.evaluateJavascript(source: '''
         if (typeof window.onARPhotoTaken === 'function') {
           window.onARPhotoTaken('$imagePath');
         }
       ''');
     }
   }
+
+  Future<bool> _onAndroidBackPressed() async {
+    if (webViewController != null) {
+      final canGoBack = await webViewController!.canGoBack();
+
+      if (canGoBack) {
+        webViewController!.goBack();
+        return false;
+      }
+    }
+    return true;
+  }
+
 }

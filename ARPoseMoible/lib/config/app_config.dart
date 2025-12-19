@@ -34,7 +34,7 @@ const String kReticlePath = 'assets/models/test_reticle.glb';
 
 /// WebView URL for the main menu
 /// Use 10.0.2.2 for Android emulator to access localhost
-const String kWebViewUrl = 'http://10.0.2.2:8000';
+const String kWebViewUrl = 'http://10.141.1.109:8000/useyaland/mobile';
 
 
 // ──────────────────────────────────────────────────────────────
