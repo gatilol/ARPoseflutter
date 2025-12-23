@@ -36,6 +36,10 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
     private var panningNode: SCNNode?
     private var panningNodeCurrentWorldLocation: SCNVector3?
 
+    // MARK: - Face AR Properties (NOUVEAU)
+    var faceArManager: FaceArManager?
+    var currentArMode: String = "world"
+
     init(
         frame: CGRect,
         viewIdentifier viewId: Int64,
@@ -67,6 +71,8 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
 
     func onDispose(_ result:FlutterResult) {
                 sceneView.session.pause()
+                faceArManager?.cleanup()  // NOUVEAU: Cleanup Face AR
+                faceArManager = nil
                 self.sessionManagerChannel.setMethodCallHandler(nil)
                 self.objectManagerChannel.setMethodCallHandler(nil)
                 self.anchorManagerChannel.setMethodCallHandler(nil)
@@ -80,7 +86,12 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
             case "init":
                 //self.sessionManagerChannel.invokeMethod("onError", arguments: ["SessionTEST from iOS"])
                 //result(nil)
-                initializeARView(arguments: arguments!, result: result)
+                if let args = arguments {
+                    initializeARView(arguments: args, result: result)
+                } else {
+                    // Initialiser avec des valeurs par défaut
+                    initializeARView(arguments: [:], result: result)
+                }
                 break
             case "getCameraPose":
                 if let cameraPose = sceneView.session.currentFrame?.camera.transform {
@@ -128,6 +139,21 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
                 }
                 result(nil)
                 break
+            
+            // MARK: - Face AR Session Methods (NOUVEAU)
+            case "switchToFaceAR":
+                switchToFaceAR(result: result)
+                break
+            case "switchToWorldAR":
+                switchToWorldAR(result: result)
+                break
+            case "isFaceTrackingSupported":
+                result(ARFaceTrackingConfiguration.isSupported)
+                break
+            case "getCurrentMode":
+                result(["mode": currentArMode])
+                break
+                
             default:
                 result(FlutterMethodNotImplemented)
                 break
@@ -241,6 +267,57 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
                     cloudAnchorHandler?.resolveCloudAnchor(anchorId: anchorId, listener: cloudAnchorDownloadedListener(parent: self))
                 }
                 break
+            
+            // MARK: - Face AR Anchor Methods (NOUVEAU)
+            case "setFaceModel":
+                if let path = arguments?["path"] as? String {
+                    faceArManager?.loadFaceModel(assetPath: path)
+                }
+                result(true)
+                break
+            case "setMakeupTexture":
+                if let path = arguments?["path"] as? String {
+                    faceArManager?.setMakeupTexture(assetPath: path)
+                }
+                result(true)
+                break
+            case "clearMakeupTexture":
+                faceArManager?.clearMakeupTexture()
+                result(true)
+                break
+            case "setFaceMeshVisible":
+                if let visible = arguments?["visible"] as? Bool {
+                    faceArManager?.setFaceMeshVisible(visible)
+                }
+                result(true)
+                break
+            case "setFaceMeshColor":
+                if let color = arguments?["color"] as? Int {
+                    faceArManager?.setFaceMeshColor(color)
+                }
+                result(true)
+                break
+            case "addFaceNode":
+                if let args = arguments {
+                    faceArManager?.addFaceNode(args: args, result: result)
+                } else {
+                    result(FlutterError(code: "INVALID_ARGS", message: "Arguments required", details: nil))
+                }
+                break
+            case "removeFaceNode":
+                if let name = arguments?["name"] as? String {
+                    faceArManager?.removeFaceNode(name: name)
+                }
+                result(true)
+                break
+            case "getBlendShapes":
+                result(faceArManager?.getBlendShapes())
+                break
+            case "clearFaceModel":
+                faceArManager?.clearFaceModel()
+                result(true)
+                break
+                
             default:
                 result(FlutterMethodNotImplemented)
                 break
@@ -343,25 +420,24 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
                     }else{
                         self.coachingView.goal = .verticalPlane
                     }
-                    // TODO: look into constraints issue. This causes a crash:
-                    /**
-                     Terminating app due to uncaught exception 'NSGenericException', reason: 'Unable to activate constraint with anchors <NSLayoutXAxisAnchor:0x28342dec0 "ARCoachingOverlayView:0x13a470ae0.centerX"> and <NSLayoutXAxisAnchor:0x28342c680 "FlutterTouchInterceptingView:0x10bad1c90.centerX"> because they have no common ancestor.  Does the constraint or its anchors reference items in different view hierarchies?  That's illegal.'
-                     */
-        //            NSLayoutConstraint.activate([
-        //                self.coachingView.centerXAnchor.constraint(equalTo: self.sceneView.superview!.centerXAnchor),
-        //                self.coachingView.centerYAnchor.constraint(equalTo: self.sceneView.superview!.centerYAnchor),
-        //                self.coachingView.widthAnchor.constraint(equalTo: self.sceneView.superview!.widthAnchor),
-        //                self.coachingView.heightAnchor.constraint(equalTo: self.sceneView.superview!.heightAnchor)
-        //                ])
                 }
             }
         }
     
         // Update session configuration
         self.sceneView.session.run(configuration)
+        currentArMode = "world"  // NOUVEAU: Set mode
     }
 
+    // MARK: - ARSCNViewDelegate
+    
     func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
+        
+        // NOUVEAU: Face AR handling
+        if let faceAnchor = anchor as? ARFaceAnchor {
+            faceArManager?.didAddFaceAnchor(faceAnchor, node: node)
+            return
+        }
         
         if let planeAnchor = anchor as? ARPlaneAnchor{
             let plane = modelBuilder.makePlane(anchor: planeAnchor, flutterAssetFile: customPlaneTexturePath)
@@ -376,12 +452,24 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
 
     func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
         
+        // NOUVEAU: Face AR handling
+        if let faceAnchor = anchor as? ARFaceAnchor {
+            faceArManager?.didUpdateFaceAnchor(faceAnchor, node: node)
+            return
+        }
+        
         if let planeAnchor = anchor as? ARPlaneAnchor, let plane = trackedPlanes[anchor.identifier] {
             modelBuilder.updatePlaneNode(planeNode: plane.1, anchor: planeAnchor)
         }
     }
 
     func renderer(_ renderer: SCNSceneRenderer, didRemove node: SCNNode, for anchor: ARAnchor) {
+        // NOUVEAU: Face AR handling
+        if let faceAnchor = anchor as? ARFaceAnchor {
+            faceArManager?.didRemoveFaceAnchor(faceAnchor, node: node)
+            return
+        }
+        
         trackedPlanes.removeValue(forKey: anchor.identifier)
     }
     
@@ -728,6 +816,86 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
             // Update bookkeeping
             anchorCollection.removeValue(forKey: anchorName)
         }
+    }
+    
+    // MARK: - Face AR Mode Switching (NOUVEAU)
+    
+    /// Bascule vers le mode Face AR
+    func switchToFaceAR(result: FlutterResult) {
+        guard ARFaceTrackingConfiguration.isSupported else {
+            DispatchQueue.main.async {
+                self.sessionManagerChannel.invokeMethod("onError", arguments: ["Face tracking not supported on this device (requires TrueDepth camera)"])
+            }
+            result(["success": false, "error": "Face tracking not supported"])
+            return
+        }
+        
+        print("[IosARView] Switching to Face AR mode")
+        
+        // Arrêter la session actuelle
+        sceneView.session.pause()
+        
+        // Nettoyer le contenu World AR
+        cleanupWorldARContent()
+        
+        // Initialiser le FaceArManager si nécessaire
+        if faceArManager == nil {
+            faceArManager = FaceArManager(
+                sceneView: sceneView,
+                anchorChannel: anchorManagerChannel,
+                sessionChannel: sessionManagerChannel
+            )
+        }
+        
+        // Démarrer Face AR
+        if faceArManager!.startFaceTracking() {
+            currentArMode = "face"
+            result(["success": true, "mode": "face"])
+        } else {
+            result(["success": false, "error": "Failed to start face tracking"])
+        }
+    }
+    
+    /// Bascule vers le mode World AR
+    func switchToWorldAR(result: FlutterResult) {
+        print("[IosARView] Switching to World AR mode")
+        
+        // Arrêter Face AR (stopFaceTracking appelle déjà cleanup())
+        faceArManager?.stopFaceTracking()
+        
+        // Relancer World AR
+        if configuration == nil {
+            configuration = ARWorldTrackingConfiguration()
+            configuration.planeDetection = [.horizontal, .vertical]
+            configuration.environmentTexturing = .automatic
+        }
+        
+        sceneView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+        currentArMode = "world"
+        
+        result(["success": true, "mode": "world"])
+    }
+    
+    /// Nettoie le contenu World AR
+    private func cleanupWorldARContent() {
+        // Supprimer les plans
+        for plane in trackedPlanes.values {
+            plane.1.removeFromParentNode()
+        }
+        trackedPlanes.removeAll()
+        
+        // Supprimer les ancres
+        for (_, anchor) in anchorCollection {
+            sceneView.session.remove(anchor: anchor)
+        }
+        anchorCollection.removeAll()
+        
+        // Supprimer les nœuds
+        for child in sceneView.scene.rootNode.childNodes {
+            child.removeFromParentNode()
+        }
+        
+        planeCount = 0
     }
     
     private class cloudAnchorUploadedListener: CloudAnchorListener {
