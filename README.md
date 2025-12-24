@@ -1,80 +1,45 @@
-useya@Mac-mini-de-useya ARPoseflutter % cat ar_flutter_plugin_2/ios/ar_flutter_plugin_2.podspec
-#
-# ar_flutter_plugin_2.podspec
-# 
-# Configuration CocoaPods pour le plugin AR Flutter
-# Supporte ARKit avec Face AR, World AR, et Augmented Images
-#
-# Prérequis:
-# - iOS 13.0 minimum (pour ARKit 3+ features)
-# - Xcode 14.0+
-# - Swift 5.0+
-#
+useya@Mac-mini-de-useya ios % pod install --repo-update                                                                
+Updating local specs repositories
+Analyzing dependencies
+Downloading dependencies
+Installing Flutter (1.0.0)
+Installing GLTFSceneKit (0.3.0)
+Installing OrderedSet (6.0.3)
+Installing ar_flutter_plugin_2 (1.0.0)
+Installing flutter_inappwebview_ios (0.0.1)
+Installing gal (1.0.0)
+Installing geolocator_apple (1.2.0)
+Installing path_provider_foundation (0.0.1)
+Installing permission_handler_apple (9.3.0)
+Installing webview_flutter_wkwebview (0.0.1)
+Generating Pods project
+[!] An error occurred while processing the post-install hook of the Podfile.
 
-Pod::Spec.new do |s|
-  s.name             = 'ar_flutter_plugin_2'
-  s.version          = '1.0.0'
-  s.summary          = 'Flutter AR Plugin with Face AR, World AR, and Augmented Images support'
-  s.description      = <<-DESC
-A comprehensive Flutter plugin for Augmented Reality on iOS.
-Features:
-- Face AR with face mesh rendering and makeup textures
-- World AR with plane detection and object placement
-- Augmented Images detection with 3D model overlay
-- GLB/GLTF 3D model loading
-- Screenshot capture
-                       DESC
-  s.homepage         = 'https://github.com/your-repo/ar_flutter_plugin_2'
-  s.license          = { :type => 'MIT', :file => '../LICENSE' }
-  s.author           = { 'Your Name' => 'your.email@example.com' }
-  s.source           = { :path => '.' }
-  
-  # Source files
-  s.source_files = 'Classes/**/*'
-  
-  # Platform requirements
-  s.platform = :ios, '13.0'
-  s.ios.deployment_target = '13.0'
-  
-  # Swift version
-  s.swift_version = '5.0'
-  
-  # Flutter dependency
-  s.dependency 'Flutter'
-  
-  # GLTFKit2 for loading GLB/GLTF 3D models
-  # This is a well-maintained library that converts GLTF to SceneKit
-  s.dependency 'GLTFKit2', '~> 0.5'
-  
-  # iOS Frameworks
-  s.frameworks = [
-    'ARKit',           # Core AR functionality
-    'SceneKit',        # 3D rendering engine
-    'AVFoundation',    # Camera access
-    'CoreImage',       # Image processing
-    'CoreGraphics',    # Graphics utilities
-    'Metal',           # GPU acceleration (used by ARKit internally)
-    'MetalKit'         # Metal utilities
-  ]
-  
-  # Build settings
-  s.pod_target_xcconfig = {
-    'DEFINES_MODULE' => 'YES',
-    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
-    # Enable ARKit (disable TrueDepth if not using Face AR in production)
-    # To disable TrueDepth API (required if not using Face AR):
-    # 'OTHER_SWIFT_FLAGS' => '$(inherited) -DDISABLE_TRUEDEPTH_API'
-  }
-  
-  # Ensure module is available
-  s.static_framework = true
-  
-  # Resource bundles (for any assets like shaders, default textures, etc.)
-  # s.resource_bundles = {
-  #   'ar_flutter_plugin_2' => ['Assets/**/*']
-  # }
-  
-  # Privacy - Camera usage is required for AR
-  # Note: The app using this plugin must add NSCameraUsageDescription to Info.plist
-  
-end
+/Users/useya/flutter/bin/cache/artifacts/engine/ios/Flutter.xcframework must exist. If you're running pod install manually, make sure "flutter precache --ios" is executed first
+
+/Users/useya/flutter/packages/flutter_tools/bin/podhelper.rb:61:in 'Object#flutter_additional_ios_build_settings'
+/Users/useya/ARPoseflutter/ARPoseMoible/ios/Podfile:41:in 'block (3 levels) in Pod::Podfile.from_ruby'
+/Users/useya/ARPoseflutter/ARPoseMoible/ios/Podfile:40:in 'Array#each'
+/Users/useya/ARPoseflutter/ARPoseMoible/ios/Podfile:40:in 'block (2 levels) in Pod::Podfile.from_ruby'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-core-1.16.2/lib/cocoapods-core/podfile.rb:196:in 'Pod::Podfile#post_install!'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/installer.rb:1013:in 'Pod::Installer#run_podfile_post_install_hook'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/installer.rb:1001:in 'block in Pod::Installer#run_podfile_post_install_hooks'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/user_interface.rb:149:in 'Pod::UserInterface.message'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/installer.rb:1000:in 'Pod::Installer#run_podfile_post_install_hooks'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/installer.rb:337:in 'block (2 levels) in Pod::Installer#create_and_save_projects'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/installer/xcode/pods_project_generator/pods_project_writer.rb:61:in 'Pod::Installer::Xcode::PodsProjectWriter#write!'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/installer.rb:336:in 'block in Pod::Installer#create_and_save_projects'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/user_interface.rb:64:in 'Pod::UserInterface.section'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/installer.rb:315:in 'Pod::Installer#create_and_save_projects'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/installer.rb:307:in 'Pod::Installer#generate_pods_project'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/installer.rb:183:in 'Pod::Installer#integrate'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/installer.rb:170:in 'Pod::Installer#install!'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/command/install.rb:52:in 'Pod::Command::Install#run'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/claide-1.1.0/lib/claide/command.rb:334:in 'CLAide::Command.run'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/lib/cocoapods/command.rb:52:in 'Pod::Command.run'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/gems/cocoapods-1.16.2/bin/pod:55:in '<top (required)>'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/bin/pod:25:in 'Kernel#load'
+/opt/homebrew/Cellar/cocoapods/1.16.2_1/libexec/bin/pod:25:in '<main>'
+
+[!] Automatically assigning platform `iOS` with version `13.0` on target `Runner` because no platform was specified. Please specify a platform for this target in your Podfile. See `https://guides.cocoapods.org/syntax/podfile.html#platform`.
+useya@Mac-mini-de-useya ios % 
