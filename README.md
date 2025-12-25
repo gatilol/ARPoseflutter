@@ -1,11 +1,31 @@
-Found 1 connected device:
-  macOS (desktop) • macos • darwin-arm64 • macOS 26.2 25C56 darwin-arm64
+useya@Mac-mini-de-useya ARPoseMoible % flutter run    
+Connected devices:
+macOS (desktop) • macos • darwin-arm64 • macOS 26.2 25C56 darwin-arm64
 
-Found 1 wirelessly connected device:
-  大子修のiPhone (wireless) (mobile) • 00008110-000119280A3A801E • ios • iOS 18.2 22C152
+Wirelessly connected devices:
+大子修のiPhone (wireless) (mobile) • 00008110-000119280A3A801E • ios • iOS 18.2 22C152
 
-Run "flutter emulators" to list and start any available device emulators.
+[1]: macOS (macos)
+[2]: 大子修のiPhone (wireless) (00008110-000119280A3A801E)
+Please choose one (or "q" to quit): 2
+Launching lib/main.dart on 大子修のiPhone (wireless) in debug mode...
+Upgrading Info.plist
+Developer identity "Apple Development: regist@useya.co.jp (F238FGW82N)" selected for iOS code signing
+Running pod install...                                             729ms
+Running Xcode build...                                                  
+Xcode build done.                                            0,6s
+Failed to build iOS app
+Could not build the precompiled application for the device.
+Uncategorized (Xcode): Unable to find a destination matching the provided destination specifier:
+                { id:00008110-000119280A3A801E }
 
-If you expected another device to be detected, please run "flutter doctor" to diagnose potential issues. You may also try increasing the time to wait
-for connected devices with the "--device-timeout" flag. Visit https://flutter.dev/setup/ for troubleshooting tips.
+        Ineligible destinations for the "Runner" scheme:
+                { platform:iOS, arch:arm64e, id:00008110-000119280A3A801E, name:大子修のiPhone, error:iOS 26.2 is not installed. Please download and install the platform
+                from Xcode > Settings > Components. }
+                { platform:iOS, id:dvtdevice-DVTiPhonePlaceholder-iphoneos:placeholder, name:Any iOS Device, error:iOS 26.2 is not installed. Please download and
+                install the platform from Xcode > Settings > Components. }
+
+
+
+Error launching application on 大子修のiPhone (wireless).
 useya@Mac-mini-de-useya ARPoseMoible % 
