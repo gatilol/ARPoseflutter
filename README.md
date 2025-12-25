@@ -1,6 +1,11 @@
-Failed Registering Bundle Identifier
-The app identifier "com.example.testWebview" cannot be registered to your development team because it is not available. Change your bundle identifier to a unique string to try again.
+Found 1 connected device:
+  macOS (desktop) • macos • darwin-arm64 • macOS 26.2 25C56 darwin-arm64
 
+Found 1 wirelessly connected device:
+  大子修のiPhone (wireless) (mobile) • 00008110-000119280A3A801E • ios • iOS 18.2 22C152
 
-No profiles for 'com.example.testWebview' were found
-Xcode couldn't find any iOS App Development provisioning profiles matching 'com.example.testWebview'.
+Run "flutter emulators" to list and start any available device emulators.
+
+If you expected another device to be detected, please run "flutter doctor" to diagnose potential issues. You may also try increasing the time to wait
+for connected devices with the "--device-timeout" flag. Visit https://flutter.dev/setup/ for troubleshooting tips.
+useya@Mac-mini-de-useya ARPoseMoible % 
