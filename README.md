@@ -1,21 +1,15 @@
-useya@Mac-mini-de-useya ios % pod install
-Analyzing dependencies
-Downloading dependencies
-Installing Flutter (1.0.0)
-Installing GLTFSceneKit (0.3.0)
-Installing OrderedSet (6.0.3)
-Installing ar_flutter_plugin_2 (1.0.0)
-Installing flutter_inappwebview_ios (0.0.1)
-Installing gal (1.0.0)
-Installing geolocator_apple (1.2.0)
-Installing path_provider_foundation (0.0.1)
-Installing permission_handler_apple (9.3.0)
-Installing webview_flutter_wkwebview (0.0.1)
-Generating Pods project
-Integrating client project
-Pod installation complete! There are 8 dependencies from the Podfile and 10 total pods installed.
-
-[!] Automatically assigning platform `iOS` with version `13.0` on target `Runner` because no platform was specified. Please specify a platform for this target in your Podfile. See `https://guides.cocoapods.org/syntax/podfile.html#platform`.
-
-[!] CocoaPods did not set the base configuration of your project because your project already has a custom config set. In order for CocoaPods integration to work at all, please either set the base configurations of the target `Runner` to `Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig` or include the `Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig` in your build configuration (`Flutter/Release.xcconfig`).
-useya@Mac-mini-de-useya ios % 
+useya@Mac-mini-de-useya ARPoseflutter % ls -la ar_flutter_plugin_2/ios/Classes/
+total 216
+drwxr-xr-x@ 12 useya  staff    384 Dec 23 14:29 .
+drwxr-xr-x@  5 useya  staff    160 Dec 23 14:29 ..
+-rw-r--r--@  1 useya  staff     87 Dec 23 14:04 ArFlutterPlugin.h
+-rw-r--r--@  1 useya  staff    611 Dec 23 14:04 ArFlutterPlugin.m
+-rw-r--r--@  1 useya  staff   9351 Dec 23 14:04 ArModelBuilder.swift
+-rw-r--r--@  1 useya  staff   2644 Dec 23 14:04 CloudAnchorHandler.swift
+-rw-r--r--@  1 useya  staff  20531 Dec 23 14:29 FaceArManager.swift
+-rw-r--r--@  1 useya  staff  47203 Dec 23 14:29 IosARView.swift
+-rw-r--r--@  1 useya  staff    565 Dec 23 14:04 IosARViewFactory.swift
+-rw-r--r--@  1 useya  staff   2572 Dec 23 14:04 JWTGenerator.swift
+drwxr-xr-x@  4 useya  staff    128 Dec 23 14:04 Serialization
+-rw-r--r--@  1 useya  staff    660 Dec 23 14:04 SwiftArFlutterPlugin.swift
+useya@Mac-mini-de-useya ARPoseflutter % 
