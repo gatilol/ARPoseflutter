@@ -1,31 +1,21 @@
-useya@Mac-mini-de-useya ARPoseMoible % flutter run                                             
+useya@Mac-mini-de-useya ARPoseMoible % flutter run
 Launching lib/main.dart on 大子修のiPhone in debug mode...
-Developer identity "Apple Development: regist@useya.co.jp (F238FGW82N)" selected for iOS code signing
-Running pod install...                                             610ms
+Automatically signing iOS for device deployment using specified development team in Xcode project: 8J65NR6QZ4
 Running Xcode build...                                                  
-Xcode build done.                                            1,6s
+Xcode build done.                                            7,0s
 Failed to build iOS app
 Could not build the precompiled application for the device.
-════════════════════════════════════════════════════════════════════════════════
-Building a deployable iOS app requires a selected Development Team with a 
-Provisioning Profile. Please ensure that a Development Team is selected by:
-  1- Open the Flutter project's Xcode target with
-       open ios/Runner.xcworkspace
-  2- Select the 'Runner' project in the navigator then the 'Runner' target
-     in the project settings
-  3- Make sure a 'Development Team' is selected under Signing & Capabilities > Team. 
-     You may need to:
-         - Log in with your Apple ID in Xcode first
-         - Ensure you have a valid unique Bundle ID
-         - Register your device with your Apple Developer Account
-         - Let Xcode automatically provision a profile for your app
-  4- Build or run your project again
+Swift Compiler Error (Xcode): Unable to find module dependency: 'ARCoreCloudAnchors'
+import ARCoreCloudAnchors
+       ^
+/Users/useya/ARPoseflutter/ar_flutter_plugin_2/ios/Classes/CloudAnchorHandler.swift:1:7
 
-For more information, please visit:
-  https://flutter.dev/to/ios-development-team
 
-Or run on an iOS simulator without code signing
-════════════════════════════════════════════════════════════════════════════════
+Swift Compiler Error (Xcode): Unable to find module dependency: 'SwiftJWT'
+import SwiftJWT
+       ^
+/Users/useya/ARPoseflutter/ar_flutter_plugin_2/ios/Classes/JWTGenerator.swift:8:7
+
+
 
 Error launching application on 大子修のiPhone.
-useya@Mac-mini-de-useya ARPoseMoible % 
