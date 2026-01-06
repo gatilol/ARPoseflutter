@@ -53,6 +53,13 @@
 		<string>arkit</string>
 	</array>
 
+    <!-- url_launcher requirement -->
+	<key>LSApplicationQueriesSchemes</key>
+    <array>
+        <string>https</string>
+        <string>http</string>
+    </array>
+
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
 </dict>

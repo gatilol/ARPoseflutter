@@ -13,6 +13,18 @@
     <uses-feature android:name="android.hardware.camera.ar" android:required="true"/>
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
 
+    <!-- Nécéssaire pour ouvrir les navigateurs externe -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+    </queries>
+
     <application
         android:usesCleartextTraffic="true"
         android:label="ARPose"
