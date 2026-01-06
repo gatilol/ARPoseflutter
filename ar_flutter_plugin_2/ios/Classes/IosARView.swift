@@ -46,6 +46,8 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
         arguments args: Any?,
         binaryMessenger messenger: FlutterBinaryMessenger
     ) {
+        NSLog("[IosARView] init called with frame: \(frame)")
+        
         self.sceneView = ARSCNView(frame: frame)
         self.coachingView = ARCoachingOverlayView(frame: frame)
         
@@ -54,18 +56,36 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
         self.anchorManagerChannel = FlutterMethodChannel(name: "aranchors_\(viewId)", binaryMessenger: messenger)
         super.init()
 
-        let configuration = ARWorldTrackingConfiguration() // Create default configuration before initializeARView is called
+        // IMPORTANT: Configure view to resize with parent
+        self.sceneView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        self.sceneView.backgroundColor = .black
+        
+        // Check ARKit support
+        guard ARWorldTrackingConfiguration.isSupported else {
+            NSLog("[IosARView] ERROR: ARWorldTrackingConfiguration not supported!")
+            return
+        }
+        
+        let configuration = ARWorldTrackingConfiguration()
+        configuration.planeDetection = [.horizontal, .vertical]
+        
         self.sceneView.delegate = self
         self.coachingView.delegate = self
-        self.sceneView.session.run(configuration)
         self.sceneView.session.delegate = self
+        
+        // Start AR session
+        self.sceneView.session.run(configuration)
+        NSLog("[IosARView] AR session started")
 
         self.sessionManagerChannel.setMethodCallHandler(self.onSessionMethodCalled)
         self.objectManagerChannel.setMethodCallHandler(self.onObjectMethodCalled)
         self.anchorManagerChannel.setMethodCallHandler(self.onAnchorMethodCalled)
+        
+        NSLog("[IosARView] init completed")
     }
 
     func view() -> UIView {
+        NSLog("[IosARView] view() called - returning sceneView with frame: \(sceneView.frame)")
         return self.sceneView
     }
 
@@ -147,11 +167,57 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
             case "switchToWorldAR":
                 switchToWorldAR(result: result)
                 break
-            case "isFaceTrackingSupported":
+            case "isFaceARSupported":
                 result(ARFaceTrackingConfiguration.isSupported)
                 break
             case "getCurrentMode":
                 result(["mode": currentArMode])
+                break
+            
+            // MARK: - Face AR Model Methods (moved from anchor channel)
+            case "setFaceModel":
+                if let modelPath = arguments?["modelPath"] as? String {
+                    faceArManager?.loadFaceModel(assetPath: modelPath)
+                    result(["success": true])
+                } else {
+                    result(["success": false, "error": "modelPath required"])
+                }
+                break
+            case "clearFaceModel":
+                faceArManager?.clearFaceModel()
+                result(["success": true])
+                break
+            case "setFaceMakeupTexture":
+                if let texturePath = arguments?["texturePath"] as? String {
+                    faceArManager?.setMakeupTexture(assetPath: texturePath)
+                    result(["success": true])
+                } else {
+                    result(["success": false, "error": "texturePath required"])
+                }
+                break
+            case "clearFaceMakeupTexture":
+                faceArManager?.clearMakeupTexture()
+                result(["success": true])
+                break
+            case "setFaceFilterColor":
+                if let r = arguments?["r"] as? Double,
+                   let g = arguments?["g"] as? Double,
+                   let b = arguments?["b"] as? Double,
+                   let a = arguments?["a"] as? Double {
+                    let color = UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: CGFloat(a))
+                    faceArManager?.setFaceMeshColor(color)
+                    result(["success": true])
+                } else {
+                    result(["success": false, "error": "r, g, b, a required"])
+                }
+                break
+            case "setFaceFilterVisible":
+                if let visible = arguments?["visible"] as? Bool {
+                    faceArManager?.setFaceMeshVisible(visible)
+                    result(["success": true])
+                } else {
+                    result(["success": false, "error": "visible required"])
+                }
                 break
                 
             default:
@@ -267,56 +333,6 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
                     cloudAnchorHandler?.resolveCloudAnchor(anchorId: anchorId, listener: cloudAnchorDownloadedListener(parent: self))
                 }
                 break
-            
-            // MARK: - Face AR Anchor Methods (NOUVEAU)
-            case "setFaceModel":
-                if let path = arguments?["path"] as? String {
-                    faceArManager?.loadFaceModel(assetPath: path)
-                }
-                result(true)
-                break
-            case "setMakeupTexture":
-                if let path = arguments?["path"] as? String {
-                    faceArManager?.setMakeupTexture(assetPath: path)
-                }
-                result(true)
-                break
-            case "clearMakeupTexture":
-                faceArManager?.clearMakeupTexture()
-                result(true)
-                break
-            case "setFaceMeshVisible":
-                if let visible = arguments?["visible"] as? Bool {
-                    faceArManager?.setFaceMeshVisible(visible)
-                }
-                result(true)
-                break
-            case "setFaceMeshColor":
-                if let color = arguments?["color"] as? Int {
-                    faceArManager?.setFaceMeshColor(color)
-                }
-                result(true)
-                break
-            case "addFaceNode":
-                if let args = arguments {
-                    faceArManager?.addFaceNode(args: args, result: result)
-                } else {
-                    result(FlutterError(code: "INVALID_ARGS", message: "Arguments required", details: nil))
-                }
-                break
-            case "removeFaceNode":
-                if let name = arguments?["name"] as? String {
-                    faceArManager?.removeFaceNode(name: name)
-                }
-                result(true)
-                break
-            case "getBlendShapes":
-                result(faceArManager?.getBlendShapes())
-                break
-            case "clearFaceModel":
-                faceArManager?.clearFaceModel()
-                result(true)
-                break
                 
             default:
                 result(FlutterMethodNotImplemented)
@@ -325,6 +341,8 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
     }
 
     func initializeARView(arguments: Dictionary<String,Any>, result: FlutterResult){
+        NSLog("[IosARView] initializeARView called with arguments: \(arguments)")
+        
         // Set plane detection configuration
         self.configuration = ARWorldTrackingConfiguration()
         self.configuration.environmentTexturing = .automatic
@@ -427,6 +445,7 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
         // Update session configuration
         self.sceneView.session.run(configuration)
         currentArMode = "world"  // NOUVEAU: Set mode
+        NSLog("[IosARView] initializeARView completed - session running, frame: \(self.sceneView.frame)")
     }
 
     // MARK: - ARSCNViewDelegate
@@ -481,6 +500,35 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
                 print(error)
             }
         }
+    }
+    
+    // MARK: - ARSession Error Handling (DEBUG)
+    
+    func session(_ session: ARSession, didFailWithError error: Error) {
+        NSLog("[IosARView] AR Session failed with error: \(error.localizedDescription)")
+        DispatchQueue.main.async {
+            self.sessionManagerChannel.invokeMethod("onError", arguments: ["AR Session error: \(error.localizedDescription)"])
+        }
+    }
+    
+    func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+        NSLog("[IosARView] Camera tracking state changed: \(camera.trackingState)")
+        switch camera.trackingState {
+        case .notAvailable:
+            NSLog("[IosARView] Tracking not available")
+        case .limited(let reason):
+            NSLog("[IosARView] Tracking limited: \(reason)")
+        case .normal:
+            NSLog("[IosARView] Tracking normal")
+        }
+    }
+    
+    func sessionWasInterrupted(_ session: ARSession) {
+        NSLog("[IosARView] Session was interrupted")
+    }
+    
+    func sessionInterruptionEnded(_ session: ARSession) {
+        NSLog("[IosARView] Session interruption ended")
     }
 
     func addNode(dict_node: Dictionary<String, Any>, dict_anchor: Dictionary<String, Any>? = nil) -> Future<Bool, Never> {
@@ -826,11 +874,11 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
             DispatchQueue.main.async {
                 self.sessionManagerChannel.invokeMethod("onError", arguments: ["Face tracking not supported on this device (requires TrueDepth camera)"])
             }
-            result(["success": false, "error": "Face tracking not supported"])
+            result(["switched": false, "error": "Face tracking not supported"])
             return
         }
         
-        print("[IosARView] Switching to Face AR mode")
+        NSLog("[IosARView] Switching to Face AR mode")
         
         // Arrêter la session actuelle
         sceneView.session.pause()
@@ -850,15 +898,15 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
         // Démarrer Face AR
         if faceArManager!.startFaceTracking() {
             currentArMode = "face"
-            result(["success": true, "mode": "face"])
+            result(["switched": true, "mode": "face"])
         } else {
-            result(["success": false, "error": "Failed to start face tracking"])
+            result(["switched": false, "error": "Failed to start face tracking"])
         }
     }
     
     /// Bascule vers le mode World AR
     func switchToWorldAR(result: FlutterResult) {
-        print("[IosARView] Switching to World AR mode")
+        NSLog("[IosARView] Switching to World AR mode")
         
         // Arrêter Face AR (stopFaceTracking appelle déjà cleanup())
         faceArManager?.stopFaceTracking()
@@ -873,7 +921,7 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
         sceneView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         currentArMode = "world"
         
-        result(["success": true, "mode": "world"])
+        result(["switched": true, "mode": "world"])
     }
     
     /// Nettoie le contenu World AR

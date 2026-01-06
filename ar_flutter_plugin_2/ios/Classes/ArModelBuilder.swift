@@ -196,13 +196,14 @@ class ArModelBuilder: NSObject {
             print("[ArModelBuilder] FileSystem GLB node '\(name)' created")
             return node
         } catch {
-            print("\(error.localizedDescription)")
+            print("[ArModelBuilder] ERROR loading FileSystem GLB: \(error.localizedDescription)")
             return nil
         }
     }
     
     // Creates a node from a given glb model URL from the web
     func makeNodeFromWebGlb(name: String, modelURL: String, transformation: Array<NSNumber>?) -> Future<SCNNode?, Never> {
+        print("[ArModelBuilder] Loading Web GLB: \(modelURL)")
         
         return Future { [weak self] promise in
             var node: SCNNode? = SCNNode()

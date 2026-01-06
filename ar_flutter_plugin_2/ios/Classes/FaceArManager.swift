@@ -111,9 +111,44 @@ class FaceArManager: NSObject {
             configuration.maximumNumberOfTrackedFaces = 1
         }
         
+        // Configurer l'éclairage de la scène pour les modèles 3D
+        sceneView?.autoenablesDefaultLighting = true
+        sceneView?.automaticallyUpdatesLighting = true
+        
+        // Ajouter une lumière ambiante pour éviter les modèles noirs
+        addAmbientLight()
+        
         sceneView?.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         print("[FaceArManager] Face tracking started")
         return true
+    }
+    
+    /// Ajoute une lumière ambiante à la scène
+    private func addAmbientLight() {
+        // Lumière ambiante pour illuminer uniformément
+        let ambientLight = SCNLight()
+        ambientLight.type = .ambient
+        ambientLight.intensity = 1000
+        ambientLight.color = UIColor.white
+        
+        let ambientLightNode = SCNNode()
+        ambientLightNode.light = ambientLight
+        ambientLightNode.name = "faceAR_ambientLight"
+        sceneView?.scene.rootNode.addChildNode(ambientLightNode)
+        
+        // Lumière directionnelle pour donner du relief
+        let directionalLight = SCNLight()
+        directionalLight.type = .directional
+        directionalLight.intensity = 500
+        directionalLight.color = UIColor.white
+        
+        let directionalLightNode = SCNNode()
+        directionalLightNode.light = directionalLight
+        directionalLightNode.position = SCNVector3(0, 1, 1)
+        directionalLightNode.name = "faceAR_directionalLight"
+        sceneView?.scene.rootNode.addChildNode(directionalLightNode)
+        
+        print("[FaceArManager] Lights added to scene")
     }
     
     /// Arrête le tracking facial
@@ -151,7 +186,7 @@ class FaceArManager: NSObject {
         isFaceDetected = true
         
         DispatchQueue.main.async {
-            self.anchorManagerChannel?.invokeMethod("onFaceDetected", arguments: ["detected": true])
+            self.sessionManagerChannel?.invokeMethod("onFaceDetected", arguments: true)
         }
     }
     
@@ -176,7 +211,7 @@ class FaceArManager: NSObject {
         faceMeshNode = nil
         
         DispatchQueue.main.async {
-            self.anchorManagerChannel?.invokeMethod("onFaceDetected", arguments: ["detected": false])
+            self.sessionManagerChannel?.invokeMethod("onFaceDetected", arguments: false)
         }
     }
     
@@ -227,6 +262,17 @@ class FaceArManager: NSObject {
         
         faceMeshMaterial?.diffuse.contents = colorFromARGB(colorValue)
         print("[FaceArManager] Mesh color updated")
+    }
+    
+    /// Définit la couleur du mesh (UIColor)
+    func setFaceMeshColor(_ color: UIColor) {
+        // Si une texture est appliquée, la supprimer
+        if makeupTexture != nil {
+            clearMakeupTexture()
+        }
+        
+        faceMeshMaterial?.diffuse.contents = color
+        print("[FaceArManager] Mesh color updated (UIColor)")
     }
     
     // MARK: - Makeup Texture
@@ -350,7 +396,8 @@ class FaceArManager: NSObject {
     
     /// Charge un modèle GLTF via GLTFSceneKit
     private func loadGLTFModel(url: URL, name: String) -> SCNNode? {
-        // Utiliser la même méthode que ArModelBuilder (path au lieu de url)
+        print("[FaceArManager] Loading GLTF model from: \(url.path)")
+        
         do {
             let sceneSource = try GLTFSceneSource(path: url.path)
             let scene = try sceneSource.scene()
@@ -358,15 +405,49 @@ class FaceArManager: NSObject {
             let node = SCNNode()
             node.name = name
             
+            print("[FaceArManager] GLTF scene loaded, childNodes: \(scene.rootNode.childNodes.count)")
+            
             for child in scene.rootNode.childNodes {
-                child.scale = SCNVector3(0.01, 0.01, 0.01)  // Conversion mm -> m
-                node.addChildNode(child.flattenedClone())
+                let clonedChild = child.flattenedClone()
+                
+                // Configurer les matériaux pour répondre à la lumière
+                configureMaterialsForLighting(node: clonedChild)
+                
+                node.addChildNode(clonedChild)
             }
             
+            print("[FaceArManager] GLTF node '\(name)' created successfully")
             return node
         } catch {
             print("[FaceArManager] GLTF loading error: \(error.localizedDescription)")
             return nil
+        }
+    }
+    
+    /// Configure les matériaux d'un nœud pour qu'ils répondent à la lumière
+    private func configureMaterialsForLighting(node: SCNNode) {
+        // Configurer le matériau de ce nœud
+        if let geometry = node.geometry {
+            for material in geometry.materials {
+                // Si le diffuse est noir ou non défini, utiliser une couleur par défaut
+                if material.diffuse.contents == nil {
+                    material.diffuse.contents = UIColor.white
+                }
+                
+                // Utiliser un modèle d'éclairage qui fonctionne bien avec les lumières
+                // blinn est un bon compromis entre réalisme et compatibilité
+                material.lightingModel = .blinn
+                
+                // S'assurer que le matériau est visible des deux côtés
+                material.isDoubleSided = true
+                
+                print("[FaceArManager] Material configured: \(material.name ?? "unnamed")")
+            }
+        }
+        
+        // Récursivement configurer les enfants
+        for child in node.childNodes {
+            configureMaterialsForLighting(node: child)
         }
     }
     
@@ -509,6 +590,10 @@ class FaceArManager: NSObject {
             info.node.removeFromParentNode()
         }
         regionNodes.removeAll()
+        
+        // Supprimer les lumières ajoutées
+        sceneView?.scene.rootNode.childNode(withName: "faceAR_ambientLight", recursively: false)?.removeFromParentNode()
+        sceneView?.scene.rootNode.childNode(withName: "faceAR_directionalLight", recursively: false)?.removeFromParentNode()
         
         faceNode = nil
         isFaceDetected = false
