@@ -1,11 +1,21 @@
-truc a faire :
+useya@Mac-mini-de-useya ARPoseMoible % flutter run
+Launching lib/main.dart on 大子修のiPhone in debug mode...
+Automatically signing iOS for device deployment using specified development team in Xcode project: 8J65NR6QZ4
+Running Xcode build...                                                  
+Xcode build done.                                            7,0s
+Failed to build iOS app
+Could not build the precompiled application for the device.
+Swift Compiler Error (Xcode): Unable to find module dependency: 'ARCoreCloudAnchors'
+import ARCoreCloudAnchors
+       ^
+/Users/useya/ARPoseflutter/ar_flutter_plugin_2/ios/Classes/CloudAnchorHandler.swift:1:7
 
-implementation des visage pour mode purikura test model
-implemetation de l'espace pour meilleur immersion
 
-apres:
-implementation 2D -> 3D
+Swift Compiler Error (Xcode): Unable to find module dependency: 'SwiftJWT'
+import SwiftJWT
+       ^
+/Users/useya/ARPoseflutter/ar_flutter_plugin_2/ios/Classes/JWTGenerator.swift:8:7
 
 
-(implementation lumiere)
-((implementaion correction electronique))
+
+Error launching application on 大子修のiPhone.
