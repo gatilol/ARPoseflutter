@@ -25,7 +25,7 @@ const Duration kAugmentedImageSetupDelay = Duration(milliseconds: 500);
 const String kDefaultWorldModelPath = 'assets/models/world/eva_01_esg.glb';
 
 /// Reticle model path for World AR placement
-const String kReticlePath = 'assets/models/test_reticle.glb';
+const String kReticlePath = 'assets/models/reticle.glb';
 
 
 // ──────────────────────────────────────────────────────────────
@@ -34,7 +34,9 @@ const String kReticlePath = 'assets/models/test_reticle.glb';
 
 /// WebView URL for the main menu
 /// Use 10.0.2.2 for Android emulator to access localhost
-const String kWebViewUrl = 'http://10.0.2.2:8000';
+const String kWebViewUrl = 'http://192.168.1.11:8000/useyaland/mobile';
+const String kLoginUrl = 'http://192.168.1.11:8000/useyaland/mobile/login';
+
 
 
 // ──────────────────────────────────────────────────────────────
