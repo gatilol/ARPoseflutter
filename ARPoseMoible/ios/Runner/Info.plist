@@ -22,12 +22,28 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>https</string>
+		<string>http</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>L'application a besoin d'accéder à votre caméra pour prendre des photos AR</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>L'application a besoin d'ajouter des photos à votre galerie</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>L'application a besoin d'accéder à votre galerie pour sauvegarder vos photos</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+		<string>arkit</string>
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -37,30 +53,11 @@
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
-
-	<!-- Permissions descriptions -->
-	<key>NSCameraUsageDescription</key>
-	<string>L'application a besoin d'accéder à votre caméra pour prendre des photos AR</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>L'application a besoin d'accéder à votre galerie pour sauvegarder vos photos</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>L'application a besoin d'ajouter des photos à votre galerie</string>
-
-	<!-- ARKit requirement -->
-	<key>UIRequiredDeviceCapabilities</key>
-	<array>
-		<string>arm64</string>
-		<string>arkit</string>
-	</array>
-
-    <!-- url_launcher requirement -->
-	<key>LSApplicationQueriesSchemes</key>
-    <array>
-        <string>https</string>
-        <string>http</string>
-    </array>
-
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
 </dict>
 </plist>
