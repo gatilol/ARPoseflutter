@@ -42,7 +42,17 @@ class FaceArManager: NSObject {
     private var faceMeshMaterial: SCNMaterial?
     
     /// Visibilité du mesh facial
-    private var isFaceMeshVisible: Bool = true
+    // ========== CONFIGURATION DÉVELOPPEUR ==========
+    // Mettre à true pour afficher le mesh facial (debug)
+    // Mettre à false pour le cacher (production/grand public)
+    private var isFaceMeshVisible: Bool = false
+    
+    // Offset vertical du maquillage (pour ajuster le positionnement)
+    // Valeur NÉGATIVE = texture MONTE sur le visage (ex: -0.03)
+    // Valeur POSITIVE = texture DESCEND sur le visage (ex: 0.03)
+    // Ajuster selon les besoins (essayer -0.02 à -0.05 pour remonter)
+    private let makeupVerticalOffset: Float = 0.05
+    // ================================================
     
     /// Couleur du mesh (format ARGB)
     private var meshColor: Int = 0x8800FF00  // Vert semi-transparent
@@ -85,7 +95,14 @@ class FaceArManager: NSObject {
     private func setupDefaultMaterial() {
         faceMeshMaterial = SCNMaterial()
         faceMeshMaterial?.lightingModel = .physicallyBased
-        faceMeshMaterial?.diffuse.contents = colorFromARGB(meshColor)
+        
+        // Si mesh non visible, le rendre transparent (pas caché, pour que le maquillage fonctionne)
+        if isFaceMeshVisible {
+            faceMeshMaterial?.diffuse.contents = colorFromARGB(meshColor)
+        } else {
+            faceMeshMaterial?.diffuse.contents = UIColor.clear
+        }
+        
         faceMeshMaterial?.isDoubleSided = true
         faceMeshMaterial?.writesToDepthBuffer = true
         faceMeshMaterial?.readsFromDepthBuffer = true
@@ -233,7 +250,9 @@ class FaceArManager: NSObject {
             geometry.firstMaterial = material
         }
         
-        faceMeshNode?.isHidden = !isFaceMeshVisible
+        // NE PAS cacher le mesh - le rendre transparent si besoin
+        // Cela permet au maquillage de s'afficher même si isFaceMeshVisible = false
+        faceMeshNode?.isHidden = false
         node.addChildNode(faceMeshNode!)
         
         // Appliquer la texture si définie
@@ -241,13 +260,25 @@ class FaceArManager: NSObject {
             applyMakeupTexture(texturePath)
         }
         
-        print("[FaceArManager] Face mesh created (1220 vertices)")
+        print("[FaceArManager] Face mesh created (1220 vertices), visible: \(isFaceMeshVisible)")
     }
     
-    /// Définit la visibilité du mesh
+    /// Définit la visibilité du mesh (couleur de base, pas le maquillage)
     func setFaceMeshVisible(_ visible: Bool) {
         isFaceMeshVisible = visible
-        faceMeshNode?.isHidden = !visible
+        
+        // Ne pas utiliser isHidden - ça cacherait aussi le maquillage
+        // Au lieu de ça, rendre le matériau transparent ou coloré
+        if makeupTexture == nil {
+            // Pas de maquillage - appliquer la couleur ou transparent
+            if visible {
+                faceMeshMaterial?.diffuse.contents = colorFromARGB(meshColor)
+            } else {
+                faceMeshMaterial?.diffuse.contents = UIColor.clear
+            }
+        }
+        // Si maquillage présent, ne pas toucher au diffuse (il contient la texture)
+        
         print("[FaceArManager] Mesh visibility: \(visible)")
     }
     
@@ -303,6 +334,12 @@ class FaceArManager: NSObject {
         faceMeshMaterial?.lightingModel = .constant
         faceMeshMaterial?.diffuse.contents = image
         
+        // ========== OFFSET VERTICAL DU MAQUILLAGE ==========
+        // Applique un décalage pour ajuster la position de la texture
+        // Translation sur Y pour remonter la texture sur le visage
+        faceMeshMaterial?.diffuse.contentsTransform = SCNMatrix4MakeTranslation(0, makeupVerticalOffset, 0)
+        // ===================================================
+        
         // Configuration du filtrage
         faceMeshMaterial?.diffuse.wrapS = .clamp
         faceMeshMaterial?.diffuse.wrapT = .clamp
@@ -314,7 +351,7 @@ class FaceArManager: NSObject {
         faceMeshMaterial?.transparencyMode = .dualLayer
         faceMeshMaterial?.blendMode = .alpha
         
-        print("[FaceArManager] Makeup texture applied: \(Int(image.size.width))x\(Int(image.size.height))")
+        print("[FaceArManager] Makeup texture applied: \(Int(image.size.width))x\(Int(image.size.height)), offset: \(makeupVerticalOffset)")
     }
     
     /// Supprime la texture makeup
@@ -323,7 +360,16 @@ class FaceArManager: NSObject {
         makeupTexturePath = nil
         
         faceMeshMaterial?.lightingModel = .physicallyBased
-        faceMeshMaterial?.diffuse.contents = colorFromARGB(meshColor)
+        
+        // Réinitialiser le transform de la texture
+        faceMeshMaterial?.diffuse.contentsTransform = SCNMatrix4Identity
+        
+        // Remettre la couleur ou transparent selon isFaceMeshVisible
+        if isFaceMeshVisible {
+            faceMeshMaterial?.diffuse.contents = colorFromARGB(meshColor)
+        } else {
+            faceMeshMaterial?.diffuse.contents = UIColor.clear
+        }
         
         print("[FaceArManager] Makeup texture cleared")
     }

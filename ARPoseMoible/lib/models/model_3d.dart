@@ -19,12 +19,21 @@ class Model3D {
   /// Type of filter (for Face AR categorization)
   final FaceFilterType filterType;
 
+  // ========== SCALE CONFIGURATION ==========
+  /// Scale factor for the 3D model
+  /// 1.0 = taille originale du modèle
+  /// 0.5 = moitié de la taille
+  /// 2.0 = double de la taille
+  final double scale;
+  // ==========================================
+
   const Model3D({
     required this.name,
     required this.path,
     required this.icon,
     this.description,
     this.filterType = FaceFilterType.model3D,
+    this.scale = 1.0, // Taille originale par défaut
   });
 }
 
@@ -40,18 +49,21 @@ const List<Model3D> worldModels = [
     path: 'assets/models/world/eva_01_esg.glb',
     icon: Icons.android,
     description: 'Evangelion Unit-01',
+    scale: 1.0, // Ajuster selon la taille souhaitée
   ),
   Model3D(
     name: 'EVA-02',
     path: 'assets/models/world/evangelion_unit-02.glb',
     icon: Icons.android,
     description: 'Evangelion Unit-02',
+    scale: 1.0, // Ajuster selon la taille souhaitée
   ),
   Model3D(
     name: 'Human',
     path: 'assets/models/world/human_body_base_cartoon.glb',
     icon: Icons.accessibility_new,
     description: 'Cartoon human model',
+    scale: 1.0, // Ajuster selon la taille souhaitée
   ),
 ];
 

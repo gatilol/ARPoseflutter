@@ -4,10 +4,27 @@ import ARKit
 import GLTFSceneKit
 import Combine
 
-// Responsible for creating Renderables and Nodes
-// Compatible avec le comportement Android de scaleToUnits
+// ============================================================
+// ArModelBuilder - Charge les modèles 3D à leur taille originale
+// et applique le scale depuis Flutter
+// ============================================================
+//
+// COMPORTEMENT:
+// - Le modèle est chargé à sa TAILLE ORIGINALE
+// - Le scale de Flutter (via la matrice de transformation) est extrait
+// - Ce scale MULTIPLIE la taille originale du modèle
+//
+// EXEMPLE:
+// - Modèle de 10m avec scale=0.1 → 1m affiché
+// - Modèle de 1m avec scale=1.0 → 1m affiché
+// - Modèle de 1m avec scale=2.0 → 2m affiché
+//
+// ============================================================
+
 class ArModelBuilder: NSObject {
 
+    // MARK: - Plane Methods
+    
     func makePlane(anchor: ARPlaneAnchor, flutterAssetFile: String?) -> SCNNode {
         let plane = SCNPlane(width: CGFloat(anchor.extent.x), height: CGFloat(anchor.extent.z))
         let material = SCNMaterial()
@@ -49,49 +66,115 @@ class ArModelBuilder: NSObject {
         planeNode.position = SCNVector3Make(anchor.center.x, 0, anchor.center.z)
     }
     
-    // MARK: - Scale To Units (comme Android)
+    // MARK: - Scale Extraction
     
-    /// Calcule le scale nécessaire pour que le modèle fasse exactement `targetSize` mètres
-    /// C'est l'équivalent de `scaleToUnits` sur Android/SceneView
-    private func calculateScaleToUnits(for node: SCNNode, targetSize: Float) -> Float {
-        // Calculer la bounding box du modèle
-        let (minBound, maxBound) = node.boundingBox
-        
-        let width = maxBound.x - minBound.x
-        let height = maxBound.y - minBound.y
-        let depth = maxBound.z - minBound.z
-        
-        // Trouver la dimension maximale
-        let maxDimension = max(width, max(height, depth))
-        
-        guard maxDimension > 0 else {
-            print("[ArModelBuilder] Warning: Model has zero dimensions, using scale 1.0")
-            return 1.0
+    /// Extrait le scale (X, Y, Z) de la matrice de transformation Flutter
+    /// La matrice 4x4 contient position, rotation ET scale
+    private func extractScale(from transformation: Array<NSNumber>?) -> SCNVector3 {
+        guard let transform = transformation, transform.count >= 16 else {
+            return SCNVector3(1.0, 1.0, 1.0) // Taille originale par défaut
         }
         
-        // Calculer le scale pour que le modèle fasse targetSize mètres
-        let scale = targetSize / maxDimension
+        let m = transform.map { $0.floatValue }
         
-        print("[ArModelBuilder] Model dimensions: \(width) x \(height) x \(depth)")
-        print("[ArModelBuilder] Max dimension: \(maxDimension), target: \(targetSize), scale: \(scale)")
+        // Extraire le scale de la matrice 4x4
+        // Scale X = longueur du vecteur colonne 0 (m[0], m[1], m[2])
+        // Scale Y = longueur du vecteur colonne 1 (m[4], m[5], m[6])
+        // Scale Z = longueur du vecteur colonne 2 (m[8], m[9], m[10])
+        let scaleX = sqrt(m[0]*m[0] + m[1]*m[1] + m[2]*m[2])
+        let scaleY = sqrt(m[4]*m[4] + m[5]*m[5] + m[6]*m[6])
+        let scaleZ = sqrt(m[8]*m[8] + m[9]*m[9] + m[10]*m[10])
         
-        return scale
+        print("[ArModelBuilder] Extracted scale: (\(scaleX), \(scaleY), \(scaleZ))")
+        
+        return SCNVector3(scaleX, scaleY, scaleZ)
     }
     
-    /// Extrait la valeur scaleToUnits depuis la matrice de transformation
-    /// Sur Android, c'est transformation.first() (le premier élément de la matrice)
-    private func extractScaleToUnits(from transformation: Array<NSNumber>?) -> Float {
-        // Le premier élément de la matrice contient le scale (quand pas de rotation)
-        // C'est ce que fait Android: scaleToUnits = transformation.first().toFloat()
-        guard let transform = transformation, !transform.isEmpty else {
-            return 1.0
+    /// Extrait la position de la matrice de transformation
+    private func extractPosition(from transformation: Array<NSNumber>?) -> SCNVector3 {
+        guard let transform = transformation, transform.count >= 16 else {
+            return SCNVector3Zero
         }
-        return transform[0].floatValue
+        
+        // Position = colonne 3 de la matrice (indices 12, 13, 14)
+        let x = transform[12].floatValue
+        let y = transform[13].floatValue
+        let z = transform[14].floatValue
+        
+        return SCNVector3(x, y, z)
+    }
+    
+    /// Extrait la rotation (quaternion) de la matrice de transformation
+    private func extractRotation(from transformation: Array<NSNumber>?) -> SCNQuaternion {
+        guard let transform = transformation, transform.count >= 16 else {
+            return SCNQuaternion(0, 0, 0, 1) // Identité
+        }
+        
+        let m = transform.map { $0.floatValue }
+        
+        // D'abord extraire le scale pour normaliser la matrice de rotation
+        let scaleX = sqrt(m[0]*m[0] + m[1]*m[1] + m[2]*m[2])
+        let scaleY = sqrt(m[4]*m[4] + m[5]*m[5] + m[6]*m[6])
+        let scaleZ = sqrt(m[8]*m[8] + m[9]*m[9] + m[10]*m[10])
+        
+        guard scaleX > 0 && scaleY > 0 && scaleZ > 0 else {
+            return SCNQuaternion(0, 0, 0, 1)
+        }
+        
+        // Matrice de rotation normalisée (3x3)
+        let m00 = m[0] / scaleX; let m01 = m[1] / scaleX; let m02 = m[2] / scaleX
+        let m10 = m[4] / scaleY; let m11 = m[5] / scaleY; let m12 = m[6] / scaleY
+        let m20 = m[8] / scaleZ; let m21 = m[9] / scaleZ; let m22 = m[10] / scaleZ
+        
+        // Convertir matrice de rotation en quaternion
+        let trace = m00 + m11 + m22
+        var qw, qx, qy, qz: Float
+        
+        if trace > 0 {
+            let s = sqrt(trace + 1.0) * 2
+            qw = 0.25 * s
+            qx = (m21 - m12) / s
+            qy = (m02 - m20) / s
+            qz = (m10 - m01) / s
+        } else if m00 > m11 && m00 > m22 {
+            let s = sqrt(1.0 + m00 - m11 - m22) * 2
+            qw = (m21 - m12) / s
+            qx = 0.25 * s
+            qy = (m01 + m10) / s
+            qz = (m02 + m20) / s
+        } else if m11 > m22 {
+            let s = sqrt(1.0 + m11 - m00 - m22) * 2
+            qw = (m02 - m20) / s
+            qx = (m01 + m10) / s
+            qy = 0.25 * s
+            qz = (m12 + m21) / s
+        } else {
+            let s = sqrt(1.0 + m22 - m00 - m11) * 2
+            qw = (m10 - m01) / s
+            qx = (m02 + m20) / s
+            qy = (m12 + m21) / s
+            qz = 0.25 * s
+        }
+        
+        return SCNQuaternion(qx, qy, qz, qw)
+    }
+    
+    /// Applique position, rotation et scale au noeud
+    private func applyTransformation(to node: SCNNode, from transformation: Array<NSNumber>?) {
+        let scale = extractScale(from: transformation)
+        let position = extractPosition(from: transformation)
+        let rotation = extractRotation(from: transformation)
+        
+        node.scale = scale
+        node.position = position
+        node.orientation = rotation
+        
+        print("[ArModelBuilder] Applied transform - pos: \(position), scale: \(scale)")
     }
 
-    // MARK: - Model Loading
+    // MARK: - Model Loading Methods
     
-    // Creates a node from a given gltf2 (.gltf/.glb) model in the Flutter assets folder
+    /// Charge un modèle GLTF/GLB depuis les assets Flutter
     func makeNodeFromGltf(name: String, modelPath: String, transformation: Array<NSNumber>?) -> SCNNode? {
         print("[ArModelBuilder] Loading GLTF model: \(modelPath)")
         
@@ -104,26 +187,18 @@ class ArModelBuilder: NSObject {
             
             print("[ArModelBuilder] GLTF scene loaded, childNodes count: \(scene.rootNode.childNodes.count)")
 
-            // Ajouter tous les enfants au node
+            // Ajouter les enfants SANS modifier leur scale
+            // Le modèle garde sa TAILLE ORIGINALE
             for child in scene.rootNode.childNodes {
                 node.addChildNode(child.flattenedClone())
             }
 
             node.name = name
             
-            // Extraire scaleToUnits depuis la transformation (comme Android)
-            let scaleToUnits = extractScaleToUnits(from: transformation)
+            // Appliquer la transformation de Flutter (position, rotation, scale)
+            applyTransformation(to: node, from: transformation)
             
-            // Calculer et appliquer le scale pour que le modèle fasse scaleToUnits mètres
-            let scale = calculateScaleToUnits(for: node, targetSize: scaleToUnits)
-            node.scale = SCNVector3(scale, scale, scale)
-            
-            // Appliquer la position et rotation depuis la transformation (sans le scale car déjà appliqué)
-            if let transform = transformation {
-                applyPositionAndRotation(to: node, from: transform)
-            }
-            
-            print("[ArModelBuilder] Node '\(name)' created with scaleToUnits: \(scaleToUnits)")
+            print("[ArModelBuilder] Node '\(name)' created successfully")
             return node
         } catch {
             print("[ArModelBuilder] ERROR loading GLTF: \(error.localizedDescription)")
@@ -131,7 +206,7 @@ class ArModelBuilder: NSObject {
         }
     }
 
-    // Creates a node from a given gltf2 (.gltf) model in the file system
+    /// Charge un modèle GLTF depuis le système de fichiers
     func makeNodeFromFileSystemGltf(name: String, modelPath: String, transformation: Array<NSNumber>?) -> SCNNode? {
         print("[ArModelBuilder] Loading FileSystem GLTF: \(modelPath)")
         
@@ -149,14 +224,7 @@ class ArModelBuilder: NSObject {
             }
 
             node.name = name
-            
-            let scaleToUnits = extractScaleToUnits(from: transformation)
-            let scale = calculateScaleToUnits(for: node, targetSize: scaleToUnits)
-            node.scale = SCNVector3(scale, scale, scale)
-            
-            if let transform = transformation {
-                applyPositionAndRotation(to: node, from: transform)
-            }
+            applyTransformation(to: node, from: transformation)
 
             print("[ArModelBuilder] FileSystem node '\(name)' created")
             return node
@@ -166,7 +234,7 @@ class ArModelBuilder: NSObject {
         }
     }
     
-    // Creates a node from a given glb model in the app's documents directory
+    /// Charge un modèle GLB depuis le système de fichiers
     func makeNodeFromFileSystemGLB(name: String, modelPath: String, transformation: Array<NSNumber>?) -> SCNNode? {
         print("[ArModelBuilder] Loading FileSystem GLB: \(modelPath)")
         
@@ -184,14 +252,7 @@ class ArModelBuilder: NSObject {
             }
 
             node.name = name
-            
-            let scaleToUnits = extractScaleToUnits(from: transformation)
-            let scale = calculateScaleToUnits(for: node, targetSize: scaleToUnits)
-            node.scale = SCNVector3(scale, scale, scale)
-            
-            if let transform = transformation {
-                applyPositionAndRotation(to: node, from: transform)
-            }
+            applyTransformation(to: node, from: transformation)
 
             print("[ArModelBuilder] FileSystem GLB node '\(name)' created")
             return node
@@ -201,7 +262,7 @@ class ArModelBuilder: NSObject {
         }
     }
     
-    // Creates a node from a given glb model URL from the web
+    /// Charge un modèle GLB depuis une URL web
     func makeNodeFromWebGlb(name: String, modelURL: String, transformation: Array<NSNumber>?) -> Future<SCNNode?, Never> {
         print("[ArModelBuilder] Loading Web GLB: \(modelURL)")
         
@@ -234,16 +295,7 @@ class ArModelBuilder: NSObject {
                             }
 
                             node?.name = name
-                            
-                            if let self = self, let node = node {
-                                let scaleToUnits = self.extractScaleToUnits(from: transformation)
-                                let scale = self.calculateScaleToUnits(for: node, targetSize: scaleToUnits)
-                                node.scale = SCNVector3(scale, scale, scale)
-                                
-                                if let transform = transformation {
-                                    self.applyPositionAndRotation(to: node, from: transform)
-                                }
-                            }
+                            self?.applyTransformation(to: node!, from: transformation)
                             
                             print("[ArModelBuilder] Web GLB node '\(name)' created")
 
@@ -264,69 +316,5 @@ class ArModelBuilder: NSObject {
             let downloadTask = URLSession.shared.downloadTask(with: URL(string: modelURL)!, completionHandler: handler)
             downloadTask.resume()
         }
-    }
-    
-    // MARK: - Transform Helpers
-    
-    /// Applique uniquement la position et rotation depuis la matrice (sans le scale)
-    private func applyPositionAndRotation(to node: SCNNode, from transformation: Array<NSNumber>) {
-        guard transformation.count >= 16 else { return }
-        
-        // Extraire la position (colonne 3 de la matrice 4x4)
-        let posX = transformation[12].floatValue
-        let posY = transformation[13].floatValue
-        let posZ = transformation[14].floatValue
-        node.position = SCNVector3(posX, posY, posZ)
-        
-        // Extraire la rotation depuis la matrice 3x3 (sans le scale)
-        // On doit d'abord normaliser les vecteurs pour enlever le scale
-        let scaleX = sqrt(pow(transformation[0].floatValue, 2) + pow(transformation[1].floatValue, 2) + pow(transformation[2].floatValue, 2))
-        let scaleY = sqrt(pow(transformation[4].floatValue, 2) + pow(transformation[5].floatValue, 2) + pow(transformation[6].floatValue, 2))
-        let scaleZ = sqrt(pow(transformation[8].floatValue, 2) + pow(transformation[9].floatValue, 2) + pow(transformation[10].floatValue, 2))
-        
-        guard scaleX > 0 && scaleY > 0 && scaleZ > 0 else { return }
-        
-        // Matrice de rotation normalisée
-        let m00 = transformation[0].floatValue / scaleX
-        let m01 = transformation[1].floatValue / scaleX
-        let m02 = transformation[2].floatValue / scaleX
-        let m10 = transformation[4].floatValue / scaleY
-        let m11 = transformation[5].floatValue / scaleY
-        let m12 = transformation[6].floatValue / scaleY
-        let m20 = transformation[8].floatValue / scaleZ
-        let m21 = transformation[9].floatValue / scaleZ
-        let m22 = transformation[10].floatValue / scaleZ
-        
-        // Convertir en quaternion
-        let trace = m00 + m11 + m22
-        var qw, qx, qy, qz: Float
-        
-        if trace > 0 {
-            let s = sqrt(trace + 1.0) * 2
-            qw = 0.25 * s
-            qx = (m21 - m12) / s
-            qy = (m02 - m20) / s
-            qz = (m10 - m01) / s
-        } else if m00 > m11 && m00 > m22 {
-            let s = sqrt(1.0 + m00 - m11 - m22) * 2
-            qw = (m21 - m12) / s
-            qx = 0.25 * s
-            qy = (m01 + m10) / s
-            qz = (m02 + m20) / s
-        } else if m11 > m22 {
-            let s = sqrt(1.0 + m11 - m00 - m22) * 2
-            qw = (m02 - m20) / s
-            qx = (m01 + m10) / s
-            qy = 0.25 * s
-            qz = (m12 + m21) / s
-        } else {
-            let s = sqrt(1.0 + m22 - m00 - m11) * 2
-            qw = (m10 - m01) / s
-            qx = (m02 + m20) / s
-            qy = (m12 + m21) / s
-            qz = 0.25 * s
-        }
-        
-        node.orientation = SCNQuaternion(qx, qy, qz, qw)
     }
 }
