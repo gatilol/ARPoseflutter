@@ -22,7 +22,7 @@ class ARService {
   final ARState state;
   String modelPath;
   final String reticlePath;
-
+  
   // ========== SCALE DU MODÈLE ==========
   /// Scale factor pour le modèle 3D World AR
   /// 1.0 = taille originale du modèle
@@ -55,7 +55,7 @@ class ARService {
   });
 
   // ========== UPDATE MODEL METHODS ==========
-
+  
   /// Update the current World AR model path and scale
   /// [newModelPath] - Path to the 3D model asset
   /// [scale] - Scale factor (1.0 = original size)
@@ -69,7 +69,7 @@ class ARService {
   void updateModelPath(String newModelPath) {
     modelPath = newModelPath;
   }
-
+  
   /// Update only the scale (keeps current model)
   void updateModelScale(double scale) {
     modelScale = scale;
