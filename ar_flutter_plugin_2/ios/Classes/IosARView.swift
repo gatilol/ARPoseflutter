@@ -66,16 +66,13 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
             return
         }
         
-        let configuration = ARWorldTrackingConfiguration()
-        configuration.planeDetection = [.horizontal, .vertical]
-        
+        // FIX: Ne configurer que les delegates ici
+        // La session sera démarrée dans initializeARView() (comme Android)
         self.sceneView.delegate = self
         self.coachingView.delegate = self
         self.sceneView.session.delegate = self
         
-        // Start AR session
-        self.sceneView.session.run(configuration)
-        NSLog("[IosARView] AR session started")
+        NSLog("[IosARView] Delegates configured, waiting for initializeARView()")
 
         self.sessionManagerChannel.setMethodCallHandler(self.onSessionMethodCalled)
         self.objectManagerChannel.setMethodCallHandler(self.onObjectMethodCalled)
@@ -439,72 +436,11 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
             }
         }
     
-        // Update session configuration
+        // FIX: Démarrer la session UNE SEULE FOIS ici (comme Android)
         self.sceneView.session.run(configuration)
         currentArMode = "world"
         
-        // FIX: Warm up du pipeline de rendu pour éviter le freeze au premier placement
-        warmUpRenderPipeline()
-        
         NSLog("[IosARView] initializeARView completed - session running, frame: \(self.sceneView.frame)")
-    }
-    
-    // MARK: - Shader Warm-up (FIX pour le freeze au premier placement)
-    
-    /// Précharge les shaders Metal pour éviter le freeze au premier placement de modèle
-    private func warmUpRenderPipeline() {
-        NSLog("[IosARView] Warming up render pipeline...")
-        
-        // Créer une géométrie simple pour forcer la compilation des shaders de base
-        let warmUpGeometry = SCNBox(width: 0.001, height: 0.001, length: 0.001, chamferRadius: 0)
-        let warmUpMaterial = SCNMaterial()
-        warmUpMaterial.diffuse.contents = UIColor.clear
-        warmUpMaterial.lightingModel = .physicallyBased
-        warmUpGeometry.materials = [warmUpMaterial]
-        
-        let warmUpNode = SCNNode(geometry: warmUpGeometry)
-        warmUpNode.name = "__warmup__"
-        warmUpNode.opacity = 0
-        warmUpNode.position = SCNVector3(0, -1000, 0) // Hors de vue
-        
-        // Ajouter à la scène pour forcer le rendu
-        sceneView.scene.rootNode.addChildNode(warmUpNode)
-        
-        // Charger aussi un modèle GLTF en arrière-plan pour pré-compiler les shaders GLTF
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-            
-            // Essayer de charger le reticle ou un modèle par défaut
-            let possiblePaths = [
-                "assets/models/reticle.glb"
-            ]
-            
-            for assetPath in possiblePaths {
-                let key = FlutterDartProject.lookupKey(forAsset: assetPath)
-                if let preloadNode = self.modelBuilder.makeNodeFromGltf(
-                    name: "__preload__",
-                    modelPath: key,
-                    transformation: nil
-                ) {
-                    DispatchQueue.main.async {
-                        preloadNode.opacity = 0
-                        preloadNode.position = SCNVector3(0, -1000, 0)
-                        self.sceneView.scene.rootNode.addChildNode(preloadNode)
-                        
-                        // Forcer un frame de rendu
-                        self.sceneView.sceneTime += 0.001
-                        
-                        // Supprimer après un court délai
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            preloadNode.removeFromParentNode()
-                            warmUpNode.removeFromParentNode()
-                            NSLog("[IosARView] Render pipeline warmed up successfully")
-                        }
-                    }
-                    break
-                }
-            }
-        }
     }
 
     // MARK: - ARSCNViewDelegate
@@ -729,6 +665,19 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
         guard let sceneView = recognizer.view as? ARSCNView else {
             return
         }
+        
+        // FIX: Vérifier que le tracking est stable avant d'accepter le tap (comme Android)
+        // Android vérifie: trackable.trackingState == TrackingState.TRACKING
+        guard let frame = sceneView.session.currentFrame else {
+            NSLog("[IosARView] Tap ignored - no current frame")
+            return
+        }
+        
+        guard frame.camera.trackingState == .normal else {
+            NSLog("[IosARView] Tap ignored - tracking not ready (state: \(frame.camera.trackingState))")
+            return
+        }
+        
         let touchLocation = recognizer.location(in: sceneView)
     
         let allHitResults = sceneView.hitTest(touchLocation, options: [SCNHitTestOption.searchMode : SCNHitTestSearchMode.closest.rawValue])
@@ -752,11 +701,12 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
             self.tappedPlaneAnchorAlignment = hitAnchor.alignment
         }
         
-        // FIX: Corriger la rotation pour qu'elle soit face à la caméra (comme sur Android)
+        // FIX: Corriger la rotation pour qu'elle soit face à la caméra (comme Android)
+        // Android envoie une rotation identity: floatArrayOf(0f, 0f, 0f, 1f)
         let serializedPlaneAndPointHitResults = planeAndPointHitResults.map { hitResult -> Dictionary<String, Any> in
             var serialized = serializeHitResult(hitResult)
             
-            // Corriger la rotation pour les plans horizontaux
+            // Corriger la rotation pour les plans
             if hitResult.type == .existingPlaneUsingGeometry ||
                hitResult.type == .existingPlaneUsingExtent {
                 
@@ -777,10 +727,10 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
         }
     }
     
-    // MARK: - Transform Correction for Reticle (FIX pour la rotation à 90°)
+    // MARK: - Transform Correction for Reticle (comme Android)
     
     /// Crée une transformation avec la position du hit mais rotation face à la caméra
-    /// Cela permet au reticle d'être orienté vers l'utilisateur comme sur Android
+    /// Cela reproduit le comportement Android qui envoie une rotation identity
     private func createCameraAlignedTransform(hitTransform: simd_float4x4, cameraTransform: simd_float4x4) -> simd_float4x4 {
         // Extraire la position du hit (on garde ça)
         let hitPosition = hitTransform.columns.3
@@ -942,6 +892,7 @@ class IosARView: NSObject, FlutterPlatformView, ARSCNViewDelegate, UIGestureReco
         let arAnchor = ARAnchor(transform: simd_float4x4(deserializeMatrix4(transform)))
         anchorCollection[name] = arAnchor
         sceneView.session.add(anchor: arAnchor)
+        // Ensure root node is added to anchor before any other function can run
         while (sceneView.node(for: arAnchor) == nil) {
             usleep(1)
         }

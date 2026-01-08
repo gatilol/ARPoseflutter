@@ -40,7 +40,7 @@ class Model3D {
     required this.icon,
     this.description,
     this.filterType = FaceFilterType.model3D,
-    this.scale = 1.0, // 15 cm par défaut
+    this.scale = 1.0,
   });
 }
 
