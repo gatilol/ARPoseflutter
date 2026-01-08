@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import '../models/ar_state.dart';
 import 'circle_button.dart';
+import 'hexagon_button.dart';
 
 /// AR overlay controls displayed on top of the AR view
 class AROverlays extends StatelessWidget {
@@ -78,7 +79,7 @@ class AROverlays extends StatelessWidget {
         _buildDeleteButton(),
 
         // Place model button (left bottom, World AR only)
-        if (state.isWorldMode) _buildPlaceModelButton(),
+        if (state.isWorldMode && state.reticleVisible) _buildPlaceModelButton(),
 
         // Mode indicator (center, above bottom controls)
         _buildModeIndicator(),
@@ -142,21 +143,11 @@ class AROverlays extends StatelessWidget {
     return Positioned(
       top: MediaQuery.of(context).padding.top + 16,
       left: 16,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onClose,
-          borderRadius: BorderRadius.circular(25),
-          child: Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.6),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.close, color: Colors.white),
-          ),
-        ),
+      child: HexagonButton(
+        icon: Icons.home,
+        onPressed: onClose,
+        backgroundColor: Colors.red.withOpacity(0.8),
+        size: 50,
       ),
     );
   }
@@ -165,34 +156,13 @@ class AROverlays extends StatelessWidget {
     return Positioned(
       top: MediaQuery.of(context).padding.top + 16,
       right: 16,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onOpenModelMenu,
-          borderRadius: BorderRadius.circular(25),
-          child: Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: state.isWorldMode
-                  ? Colors.blue.withValues(alpha: 0.8)
-                  : Colors.purple.withValues(alpha: 0.8),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: (state.isWorldMode ? Colors.blue : Colors.purple)
-                      .withValues(alpha: 0.3),
-                  blurRadius: 10,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            child: Icon(
-              state.isWorldMode ? Icons.view_in_ar : Icons.face_retouching_natural,
-              color: Colors.white,
-            ),
-          ),
-        ),
+      child: HexagonButton(
+        icon: state.isWorldMode ? Icons.view_in_ar : Icons.face_retouching_natural,
+        onPressed: onOpenModelMenu,
+        backgroundColor: state.isWorldMode
+            ? Colors.blue.withOpacity(0.8)
+            : Colors.purple.withOpacity(0.8),
+        size: 50,
       ),
     );
   }
@@ -206,14 +176,13 @@ class AROverlays extends StatelessWidget {
     return Positioned(
       top: MediaQuery.of(context).padding.top + 90,
       left: 20,
-      child: FloatingActionButton(
-        heroTag: 'rotateLeft',
-        mini: true,
+      child: HexagonButton(
+        icon: Icons.rotate_left,
         onPressed: () async {
           await onRotateReticle(-math.pi / 8);
         },
-        backgroundColor: Colors.orange,
-        child: const Icon(Icons.rotate_left),
+        backgroundColor: Colors.purple.withOpacity(0.8),
+        size: 45,
       ),
     );
   }
@@ -222,14 +191,13 @@ class AROverlays extends StatelessWidget {
     return Positioned(
       top: MediaQuery.of(context).padding.top + 90,
       right: 20,
-      child: FloatingActionButton(
-        heroTag: 'rotateRight',
-        mini: true,
+      child: HexagonButton(
+        icon: Icons.rotate_right,
         onPressed: () async {
           await onRotateReticle(math.pi / 8);
         },
-        backgroundColor: Colors.orange,
-        child: const Icon(Icons.rotate_right),
+        backgroundColor: Colors.purple.withOpacity(0.8),
+        size: 45,
       ),
     );
   }
@@ -241,15 +209,17 @@ class AROverlays extends StatelessWidget {
 
   Widget _buildPhotoButton() {
     return Positioned(
-      bottom: 50,
+      bottom: 70,
       left: 0,
       right: 0,
       child: Center(
-        child: CircleButton(
+        child: HexagonButton(
           icon: Icons.camera_alt,
           onPressed: onTakePhoto,
+          backgroundColor: state.isWorldMode
+              ? Colors.purple.withOpacity(0.9)
+              : Colors.blue.withOpacity(0.9),
           size: 80,
-          isPrimary: true,
         ),
       ),
     );
@@ -257,26 +227,26 @@ class AROverlays extends StatelessWidget {
 
   Widget _buildDeleteButton() {
     return Positioned(
-      bottom: 50,
+      bottom: 70,
       right: 20,
-      child: FloatingActionButton(
-        heroTag: 'delete',
+      child: HexagonButton(
+        icon: Icons.delete,
         onPressed: onDelete,
-        backgroundColor: Colors.red,
-        child: const Icon(Icons.delete),
+        backgroundColor: Colors.red.withOpacity(0.8),
+        size: 55,
       ),
     );
   }
 
   Widget _buildPlaceModelButton() {
     return Positioned(
-      bottom: 50,
+      bottom: 70,
       left: 20,
-      child: FloatingActionButton(
-        heroTag: 'placeModel',
+      child: HexagonButton(
+        icon: Icons.add_location_alt,
         onPressed: onPlaceModel,
-        backgroundColor: Colors.blue,
-        child: const Icon(Icons.add_location_alt),
+        backgroundColor: Colors.blue.withOpacity(0.8),
+        size: 55,
       ),
     );
   }
@@ -288,44 +258,17 @@ class AROverlays extends StatelessWidget {
 
   Widget _buildSwitchCameraButton(BuildContext context) {
     return Positioned(
-      bottom: 120,
+      bottom: 130,
       right: 23,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: isSwitchingCamera ? null : onSwitchCamera,
-          borderRadius: BorderRadius.circular(25),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: isSwitchingCamera
-                  ? Colors.grey.withValues(alpha: 0.6)
-                  : Colors.orange.withValues(alpha: 0.8),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.orange.withValues(alpha: 0.3),
-                  blurRadius: 10,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            child: isSwitchingCamera
-                ? const Center(
-                    child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    ),
-                  )
-                : const Icon(Icons.cameraswitch, color: Colors.white),
-          ),
-        ),
+      child: HexagonButton(
+        icon: isSwitchingCamera ? Icons.hourglass_empty : Icons.cameraswitch,
+        onPressed: isSwitchingCamera ? null : onSwitchCamera,
+        backgroundColor: isSwitchingCamera
+            ? Colors.grey.withOpacity(0.6)
+            : state.isWorldMode
+              ? Colors.blue.withOpacity(0.8)
+              : Colors.purple.withOpacity(0.8),
+        size: 50,
       ),
     );
   }
@@ -339,42 +282,15 @@ class AROverlays extends StatelessWidget {
     return Positioned(
       bottom: 180,
       right: 23,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onToggleAugmentedImage3D,
-          borderRadius: BorderRadius.circular(25),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: isAugmentedImage3DActive
-                  ? Colors.green.withValues(alpha: 0.9)
-                  : Colors.cyan.withValues(alpha: 0.8),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: (isAugmentedImage3DActive ? Colors.green : Colors.cyan)
-                      .withValues(alpha: 0.4),
-                  blurRadius: 12,
-                  spreadRadius: 3,
-                ),
-              ],
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.5),
-                width: 2,
-              ),
-            ),
-            child: Icon(
-              isAugmentedImage3DActive
-                  ? Icons.view_in_ar
-                  : Icons.view_in_ar_outlined,
-              color: Colors.white,
-              size: 26,
-            ),
-          ),
-        ),
+      child: HexagonButton(
+        icon: isAugmentedImage3DActive
+            ? Icons.view_in_ar
+            : Icons.view_in_ar_outlined,
+        onPressed: onToggleAugmentedImage3D,
+        backgroundColor: isAugmentedImage3DActive
+            ? Colors.green.withOpacity(0.9)
+            : Colors.cyan.withOpacity(0.8),
+        size: 50,
       ),
     );
   }
@@ -388,7 +304,7 @@ class AROverlays extends StatelessWidget {
     final isWorldMode = state.isWorldMode;
 
     return Positioned(
-      bottom: 140,
+      bottom: 150,
       left: 0,
       right: 0,
       child: Center(

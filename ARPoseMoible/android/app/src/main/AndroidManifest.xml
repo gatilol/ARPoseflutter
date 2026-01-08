@@ -27,7 +27,7 @@
 
     <application
         android:usesCleartextTraffic="true"
-        android:label="ARPose"
+        android:label="UseyaLand"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">
 

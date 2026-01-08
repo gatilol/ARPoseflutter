@@ -3,6 +3,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
+import '../widgets/connection_error_page.dart';
 import 'ar_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,6 +22,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // URL de démarrage
   String _initialUrl = kWebViewUrl;
+
+  bool _hasConnectionError = false;
+  String _errorMessage = '';
+
 
 
   // ──────────────────────────────────────────────────────────────
@@ -67,6 +72,25 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     _isResetting = false;
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // ERROR Page
+  // ──────────────────────────────────────────────────────────────
+
+  void _showConnectionError(String message) {
+    setState(() {
+      _hasConnectionError = true;
+      _errorMessage = message;
+    });
+  }
+
+  void _retryConnection() {
+    setState(() {
+      _hasConnectionError = false;
+      _errorMessage = '';
+      _webViewKey = UniqueKey();
+    });
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -148,10 +172,28 @@ class _HomeScreenState extends State<HomeScreen> {
                     debugPrint('📍 NAV → $url');
                   }
                 },
+
+                onLoadError: (controller, url, code, message) {
+                  debugPrint('❌ Load Error: $code - $message');
+                  _showConnectionError('Impossible de charger la page. Vérifiez votre connexion internet.');
+                },
+
+                onLoadHttpError: (controller, url, statusCode, description) {
+                  debugPrint('❌ HTTP Error: $statusCode');
+                  // Ne pas afficher d'erreur pour les erreurs 4xx/5xx
+                  // car Laravel a ses propres pages d'erreur
+                },
               ),
 
-            // Loader au-dessus de la WebView
-            if (isLoading)
+            // Page d'erreur - SUPER SIMPLE maintenant !
+            if (_hasConnectionError)
+              ConnectionErrorPage(
+                message: _errorMessage,
+                onRetry: _retryConnection,
+              ),
+
+            // Loader
+            if (isLoading && !_hasConnectionError)
               const Center(
                 child: CircularProgressIndicator(),
               ),

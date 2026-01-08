@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/face_filter_type.dart';
 import '../models/model_3d.dart';
+import 'hexagon_button.dart'; // Import pour HexagonPainter
 
 /// Sliding menu for selecting 3D models and face filters
 class ModelSelectorMenu extends StatelessWidget {
@@ -36,7 +37,7 @@ class ModelSelectorMenu extends StatelessWidget {
           GestureDetector(
             onTap: onClose,
             child: Container(
-              color: Colors.black.withValues(alpha: 0.5),
+              color: Colors.black.withOpacity(0.5),
             ),
           ),
 
@@ -50,10 +51,10 @@ class ModelSelectorMenu extends StatelessWidget {
           child: Container(
             width: 320,
             decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E),
+              color: const Color(0xFFFFFFFF),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
+                  color: Colors.purple.withOpacity(0.3),
                   blurRadius: 20,
                   offset: const Offset(-5, 0),
                 ),
@@ -67,8 +68,8 @@ class ModelSelectorMenu extends StatelessWidget {
                     child: currentModels.isEmpty
                         ? _buildEmptyState()
                         : isWorldMode
-                            ? _buildSimpleList()
-                            : _buildCategorizedList(),
+                        ? _buildSimpleList()
+                        : _buildCategorizedList(),
                   ),
                   _buildFooter(),
                 ],
@@ -89,30 +90,31 @@ class ModelSelectorMenu extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isWorldMode
-            ? Colors.blue.withValues(alpha: 0.1)
-            : Colors.purple.withValues(alpha: 0.1),
+        color: Colors.purple.withOpacity(0.2),
         border: Border(
           bottom: BorderSide(
-            color: Colors.white.withValues(alpha: 0.1),
+            color: Colors.purple.withOpacity(0.1),
           ),
         ),
       ),
       child: Row(
         children: [
-          // Icon container
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: isWorldMode
-                  ? Colors.blue.withValues(alpha: 0.2)
-                  : Colors.purple.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(8),
+          // Icon hexagonal
+          CustomPaint(
+            size: const Size(50, 50),
+            painter: HexagonPainter(
+              color: Colors.purple.withOpacity(0.3),
             ),
-            child: Icon(
-              isWorldMode ? Icons.view_in_ar : Icons.face_retouching_natural,
-              color: isWorldMode ? Colors.blue : Colors.purple,
-              size: 24,
+            child: SizedBox(
+              width: 50,
+              height: 50,
+              child: Center(
+                child: Icon(
+                  isWorldMode ? Icons.view_in_ar : Icons.face_retouching_natural,
+                  color: Colors.purple,
+                  size: 24,
+                ),
+              ),
             ),
           ),
 
@@ -126,7 +128,7 @@ class ModelSelectorMenu extends StatelessWidget {
                 Text(
                   isWorldMode ? '3D Models' : 'Face Filters',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Colors.black,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -137,7 +139,7 @@ class ModelSelectorMenu extends StatelessWidget {
                       ? '${worldModels.length} models available'
                       : '${faceFilters.length} filters available',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
+                    color: Colors.black.withOpacity(0.6),
                     fontSize: 12,
                   ),
                 ),
@@ -145,10 +147,26 @@ class ModelSelectorMenu extends StatelessWidget {
             ),
           ),
 
-          // Close button
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.white),
-            onPressed: onClose,
+          // Close button hexagonal
+          GestureDetector(
+            onTap: onClose,
+            child: CustomPaint(
+              size: const Size(40, 40),
+              painter: HexagonPainter(
+                color: Colors.red.withOpacity(0.2),
+              ),
+              child: const SizedBox(
+                width: 40,
+                height: 40,
+                child: Center(
+                  child: Icon(
+                    Icons.close,
+                    color: Colors.red,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -189,7 +207,7 @@ class ModelSelectorMenu extends StatelessWidget {
         if (modelFilters.isNotEmpty) ...[
           _buildSectionHeader('3D Accessories', Icons.view_in_ar),
           ...modelFilters.map(
-            (m) => _buildModelItem(m, currentModelPath == m.path),
+                (m) => _buildModelItem(m, currentModelPath == m.path),
           ),
         ],
 
@@ -197,7 +215,7 @@ class ModelSelectorMenu extends StatelessWidget {
         if (makeupFilters.isNotEmpty) ...[
           _buildSectionHeader('Makeup', Icons.brush),
           ...makeupFilters.map(
-            (m) => _buildModelItem(m, currentMakeupPath == m.path),
+                (m) => _buildModelItem(m, currentMakeupPath == m.path),
           ),
         ],
       ],
@@ -210,16 +228,29 @@ class ModelSelectorMenu extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
         children: [
-          Icon(
-            icon,
-            color: Colors.purple.withValues(alpha: 0.7),
-            size: 16,
+          // Petit hexagone pour la section
+          CustomPaint(
+            size: const Size(28, 28),
+            painter: HexagonPainter(
+              color: Colors.purple.withOpacity(0.2),
+            ),
+            child: SizedBox(
+              width: 28,
+              height: 28,
+              child: Center(
+                child: Icon(
+                  icon,
+                  color: Colors.purple,
+                  size: 14,
+                ),
+              ),
+            ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Text(
             title,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.7),
+              color: Colors.black.withOpacity(0.7),
               fontSize: 12,
               fontWeight: FontWeight.bold,
               letterSpacing: 1,
@@ -236,46 +267,56 @@ class ModelSelectorMenu extends StatelessWidget {
   // ──────────────────────────────────────────────────────────────
 
   Widget _buildModelItem(Model3D model, bool isSelected) {
-    final accentColor = isWorldMode ? Colors.blue : Colors.purple;
+    final accentColor = Colors.purple;
 
     // Icon background color based on type and selection
     Color iconBgColor;
+    Color iconBorderColor;
     if (isSelected) {
-      iconBgColor = accentColor;
-    } else if (model.filterType == FaceFilterType.makeup) {
-      iconBgColor = Colors.pink.withValues(alpha: 0.3);
+      iconBgColor = accentColor.withOpacity(0.3);
+      iconBorderColor = accentColor;
     } else {
-      iconBgColor = Colors.white.withValues(alpha: 0.1);
+      iconBgColor = Colors.grey.shade200;
+      iconBorderColor = Colors.grey.shade400;
     }
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
         color: isSelected
-            ? accentColor.withValues(alpha: 0.2)
-            : Colors.transparent,
+            ? accentColor.withOpacity(0.1)
+            : Color(0xFFF5F5F5),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isSelected ? accentColor : Colors.transparent,
+          color: isSelected ? accentColor : Colors.grey.shade300,
           width: 2,
         ),
       ),
       child: ListTile(
-        // Icon
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
+        // Icon hexagonal
+        leading: CustomPaint(
+          size: const Size(45, 45),
+          painter: HexagonPainter(
             color: iconBgColor,
-            borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(model.icon, color: Colors.white, size: 24),
+          child: Container(
+            width: 45,
+            height: 45,
+            child: Center(
+              child: Icon(
+                model.icon,
+                color: isSelected ? accentColor : Colors.black87,
+                size: 22,
+              ),
+            ),
+          ),
         ),
 
         // Title
         title: Text(
           model.name,
           style: const TextStyle(
-            color: Colors.white,
+            color: Colors.black,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -284,29 +325,33 @@ class ModelSelectorMenu extends StatelessWidget {
         // Description
         subtitle: model.description != null
             ? Text(
-                model.description!,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  fontSize: 12,
-                ),
-              )
+          model.description!,
+          style: TextStyle(
+            color: Colors.black.withOpacity(0.5),
+            fontSize: 12,
+          ),
+        )
             : null,
 
         // Trailing (checkmark and/or remove button)
         trailing: isSelected
             ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.check_circle, color: accentColor),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle, color: accentColor, size: 24),
 
-                  // Remove button (Face AR only)
-                  if (!isWorldMode) ...[
-                    const SizedBox(width: 8),
-                    _buildRemoveButton(model.filterType),
-                  ],
-                ],
-              )
-            : const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
+            // Remove button hexagonal (Face AR only)
+            if (!isWorldMode) ...[
+              const SizedBox(width: 8),
+              _buildRemoveButton(model.filterType),
+            ],
+          ],
+        )
+            : Icon(
+          Icons.arrow_forward_ios,
+          color: Colors.black.withOpacity(0.3),
+          size: 16,
+        ),
 
         onTap: () {
           onModelSelected(model);
@@ -316,7 +361,7 @@ class ModelSelectorMenu extends StatelessWidget {
     );
   }
 
-  /// Remove button for active filters (Face AR only)
+  /// Remove button hexagonal for active filters (Face AR only)
   Widget _buildRemoveButton(FaceFilterType filterType) {
     return GestureDetector(
       onTap: () {
@@ -324,17 +369,22 @@ class ModelSelectorMenu extends StatelessWidget {
           onFilterRemoved!(filterType);
         }
       },
-      child: Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: Colors.red.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: Colors.red.withValues(alpha: 0.5),
-            width: 1,
+      child: CustomPaint(
+        size: const Size(32, 32),
+        painter: HexagonPainter(
+          color: Colors.red.withOpacity(0.2),
+        ),
+        child: const SizedBox(
+          width: 32,
+          height: 32,
+          child: Center(
+            child: Icon(
+              Icons.close,
+              color: Colors.red,
+              size: 16,
+            ),
           ),
         ),
-        child: const Icon(Icons.close, color: Colors.red, size: 18),
       ),
     );
   }
@@ -349,16 +399,29 @@ class ModelSelectorMenu extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            isWorldMode ? Icons.view_in_ar : Icons.face,
-            color: Colors.white.withValues(alpha: 0.3),
-            size: 64,
+          // Hexagone vide
+          CustomPaint(
+            size: const Size(80, 80),
+            painter: HexagonPainter(
+              color: Colors.grey.shade200,
+            ),
+            child: SizedBox(
+              width: 80,
+              height: 80,
+              child: Center(
+                child: Icon(
+                  isWorldMode ? Icons.view_in_ar : Icons.face,
+                  color: Colors.grey.shade400,
+                  size: 40,
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 16),
           Text(
             isWorldMode ? 'No 3D models available' : 'No filters available',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
+              color: Colors.black.withOpacity(0.6),
               fontSize: 16,
             ),
           ),
@@ -373,7 +436,7 @@ class ModelSelectorMenu extends StatelessWidget {
       decoration: BoxDecoration(
         border: Border(
           top: BorderSide(
-            color: Colors.white.withValues(alpha: 0.1),
+            color: Colors.black.withOpacity(0.1),
           ),
         ),
       ),
@@ -381,7 +444,7 @@ class ModelSelectorMenu extends StatelessWidget {
         children: [
           Icon(
             Icons.info_outline,
-            color: Colors.white.withValues(alpha: 0.6),
+            color: Colors.black.withOpacity(0.6),
             size: 20,
           ),
           const SizedBox(width: 8),
@@ -391,7 +454,7 @@ class ModelSelectorMenu extends StatelessWidget {
                   ? 'Select a model before placing'
                   : 'Select a filter for your face',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.6),
+                color: Colors.black.withOpacity(0.6),
                 fontSize: 12,
               ),
             ),
