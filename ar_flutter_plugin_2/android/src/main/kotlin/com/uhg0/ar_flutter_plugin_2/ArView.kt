@@ -756,25 +756,24 @@ class ArView(
         
         val transformation = nodeData["transformation"] as? ArrayList<Double> ?: return null
         
-        // ========== EXTRACTION DU SCALE DE LA MATRICE ==========
-        // La matrice 4x4 de Flutter contient position, rotation ET scale
-        // On extrait le scale pour l'appliquer comme multiplicateur
+        // ========== EXTRACTION DU SCALE (scaleToUnits) ==========
+        // Le scale dans la matrice Flutter représente la TAILLE CIBLE en mètres
+        // scaleToUnits normalise le modèle pour qu'il fasse cette taille
         val m = FloatArray(16) { i -> transformation[i].toFloat() }
-        val scaleX = kotlin.math.sqrt(m[0]*m[0] + m[1]*m[1] + m[2]*m[2])
-        val scaleY = kotlin.math.sqrt(m[4]*m[4] + m[5]*m[5] + m[6]*m[6])
-        val scaleZ = kotlin.math.sqrt(m[8]*m[8] + m[9]*m[9] + m[10]*m[10])
-        Log.d(TAG, "Extracted scale: ($scaleX, $scaleY, $scaleZ)")
+        val scaleToUnitsValue = kotlin.math.sqrt(m[0]*m[0] + m[1]*m[1] + m[2]*m[2])
+        Log.d(TAG, "scaleToUnits value: $scaleToUnitsValue meters")
         // ========================================================
 
         return try {
             sceneView.modelLoader.loadModelInstance(fileLocation)?.let { modelInstance ->
                 object : ModelNode(
                     modelInstance = modelInstance,
-                    // ========== CHANGEMENT CLÉ ==========
-                    // scaleToUnits = null → charge le modèle à sa taille originale
-                    // Le scale sera appliqué via node.scale après
-                    scaleToUnits = null,
-                    // =====================================
+                    // ========== scaleToUnits ==========
+                    // Normalise le modèle pour qu'il fasse scaleToUnitsValue mètres
+                    // Ex: 0.15 → modèle de 15 cm
+                    // Ex: 1.0 → modèle de 1 mètre
+                    scaleToUnits = scaleToUnitsValue,
+                    // ==================================
                 ) {
                     override fun onMove(detector: MoveGestureDetector, e: MotionEvent): Boolean {
                         if (handlePans) {
@@ -837,12 +836,6 @@ class ArView(
                     isPositionEditable = handlePans
                     isRotationEditable = handleRotation
                     name = nodeData["name"] as? String
-                    
-                    // ========== APPLIQUER LE SCALE ==========
-                    // Applique le scale extrait de la matrice Flutter
-                    // Ceci MULTIPLIE la taille originale du modèle par le scale
-                    scale = SceneScale(scaleX, scaleY, scaleZ)
-                    // =========================================
                 }
             }
         } catch (e: Exception) {

@@ -35,6 +35,9 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
 
   // World AR model paths
   String currentWorldModelPath = kDefaultWorldModelPath;
+  // ========== SCALE DU MODÈLE PAR DÉFAUT ==========
+  double currentWorldModelScale = worldModels.isNotEmpty ? worldModels.first.scale : 1.0;
+  // ================================================
 
   // Face AR filter paths
   String currentFaceModelPath = '';
@@ -63,6 +66,7 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
       state: arState,
       modelPath: currentWorldModelPath,
       reticlePath: kReticlePath,
+      modelScale: currentWorldModelScale,  // ← PASSE LE SCALE PAR DÉFAUT
     );
     photoService = PhotoService(state: arState);
 
@@ -96,11 +100,14 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
     HapticFeedback.lightImpact();
 
     if (arState.isWorldMode) {
-      // World AR: Update 3D model
+      // World AR: Update 3D model with scale
       setState(() {
         currentWorldModelPath = model.path;
+        currentWorldModelScale = model.scale;  // ← MISE À JOUR DU SCALE
       });
-      arService.updateModelPath(currentWorldModelPath);
+      // ========== PASSE LE SCALE DU MODÈLE ==========
+      arService.updateModel(model.path, scale: model.scale);
+      // ==============================================
 
       SnackBarHelper.show(
         context,

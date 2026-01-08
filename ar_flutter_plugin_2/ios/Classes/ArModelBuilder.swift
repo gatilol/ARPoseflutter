@@ -160,16 +160,39 @@ class ArModelBuilder: NSObject {
     }
     
     /// Applique position, rotation et scale au noeud
+    /// Le scale fonctionne comme scaleToUnits sur Android :
+    /// Il normalise le modèle pour qu'il fasse "scale" mètres de haut
     private func applyTransformation(to node: SCNNode, from transformation: Array<NSNumber>?) {
-        let scale = extractScale(from: transformation)
+        let targetSize = extractScale(from: transformation).x  // On prend juste X car c'est uniforme
         let position = extractPosition(from: transformation)
         let rotation = extractRotation(from: transformation)
         
-        node.scale = scale
+        // Appliquer position et rotation
         node.position = position
         node.orientation = rotation
         
-        print("[ArModelBuilder] Applied transform - pos: \(position), scale: \(scale)")
+        // ========== SCALE TO UNITS (comme Android) ==========
+        // Calculer le bounding box du modèle
+        let (minBound, maxBound) = node.boundingBox
+        let width = maxBound.x - minBound.x
+        let height = maxBound.y - minBound.y
+        let depth = maxBound.z - minBound.z
+        let maxDimension = max(width, max(height, depth))
+        
+        print("[ArModelBuilder] Model bounding box: \(width) x \(height) x \(depth), max: \(maxDimension)")
+        
+        // Calculer le scale pour que le modèle fasse targetSize mètres
+        if maxDimension > 0 && targetSize > 0 {
+            let normalizedScale = targetSize / maxDimension
+            node.scale = SCNVector3(normalizedScale, normalizedScale, normalizedScale)
+            print("[ArModelBuilder] scaleToUnits: targetSize=\(targetSize), normalizedScale=\(normalizedScale)")
+        } else {
+            node.scale = SCNVector3(targetSize, targetSize, targetSize)
+            print("[ArModelBuilder] Using direct scale: \(targetSize)")
+        }
+        // ====================================================
+        
+        print("[ArModelBuilder] Applied transform - pos: \(position), finalScale: \(node.scale)")
     }
 
     // MARK: - Model Loading Methods
@@ -187,10 +210,10 @@ class ArModelBuilder: NSObject {
             
             print("[ArModelBuilder] GLTF scene loaded, childNodes count: \(scene.rootNode.childNodes.count)")
 
-            // Ajouter les enfants SANS modifier leur scale
-            // Le modèle garde sa TAILLE ORIGINALE
+            // Ajouter les enfants avec clone() (pas flattenedClone())
+            // clone() préserve la hiérarchie - le scale du parent affecte les enfants
             for child in scene.rootNode.childNodes {
-                node.addChildNode(child.flattenedClone())
+                node.addChildNode(child.clone())
             }
 
             node.name = name
@@ -198,7 +221,7 @@ class ArModelBuilder: NSObject {
             // Appliquer la transformation de Flutter (position, rotation, scale)
             applyTransformation(to: node, from: transformation)
             
-            print("[ArModelBuilder] Node '\(name)' created successfully")
+            print("[ArModelBuilder] Node '\(name)' created with scale")
             return node
         } catch {
             print("[ArModelBuilder] ERROR loading GLTF: \(error.localizedDescription)")
@@ -220,7 +243,7 @@ class ArModelBuilder: NSObject {
             print("[ArModelBuilder] FileSystem GLTF loaded, childNodes: \(scene.rootNode.childNodes.count)")
 
             for child in scene.rootNode.childNodes {
-                node.addChildNode(child.flattenedClone())
+                node.addChildNode(child.clone())
             }
 
             node.name = name
@@ -248,7 +271,7 @@ class ArModelBuilder: NSObject {
             print("[ArModelBuilder] FileSystem GLB loaded, childNodes: \(scene.rootNode.childNodes.count)")
 
             for child in scene.rootNode.childNodes {
-                node.addChildNode(child.flattenedClone())
+                node.addChildNode(child.clone())
             }
 
             node.name = name
@@ -291,7 +314,7 @@ class ArModelBuilder: NSObject {
                             print("[ArModelBuilder] Web GLB loaded, childNodes: \(scene.rootNode.childNodes.count)")
 
                             for child in scene.rootNode.childNodes {
-                                node?.addChildNode(child)
+                                node?.addChildNode(child.clone())
                             }
 
                             node?.name = name
