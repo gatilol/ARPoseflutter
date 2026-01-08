@@ -19,12 +19,28 @@ class Model3D {
   /// Type of filter (for Face AR categorization)
   final FaceFilterType filterType;
 
+  // ========== SCALE TO UNITS (taille en mètres) ==========
+  /// Taille cible du modèle en MÈTRES
+  /// Le modèle sera normalisé pour que sa plus grande dimension
+  /// fasse exactement cette taille.
+  /// 
+  /// Exemples:
+  /// - scale: 0.15 → modèle de 15 cm (comme le reticle)
+  /// - scale: 0.5  → modèle de 50 cm
+  /// - scale: 1.0  → modèle de 1 mètre
+  /// - scale: 2.0  → modèle de 2 mètres
+  /// 
+  /// Note: Non utilisé pour Face AR (ignoré)
+  final double scale;
+  // =======================================================
+
   const Model3D({
     required this.name,
     required this.path,
     required this.icon,
     this.description,
     this.filterType = FaceFilterType.model3D,
+    this.scale = 1.0, // 15 cm par défaut
   });
 }
 
@@ -40,18 +56,21 @@ const List<Model3D> worldModels = [
     path: 'assets/models/world/eva_01_esg.glb',
     icon: Icons.android,
     description: 'Evangelion Unit-01',
+    scale: 2.0, // 50 cm de haut
   ),
   Model3D(
     name: 'EVA-02',
     path: 'assets/models/world/evangelion_unit-02.glb',
     icon: Icons.android,
     description: 'Evangelion Unit-02',
+    scale: 0.5, // 50 cm de haut
   ),
   Model3D(
     name: 'Human',
     path: 'assets/models/world/human_body_base_cartoon.glb',
     icon: Icons.accessibility_new,
     description: 'Cartoon human model',
+    scale: 0.3, // 30 cm de haut
   ),
 ];
 
@@ -61,6 +80,7 @@ const List<Model3D> worldModels = [
 // ──────────────────────────────────────────────────────────────
 
 /// Available filters for Face AR mode (3D models + makeup textures)
+/// Note: scale is ignored for Face AR filters
 const List<Model3D> faceFilters = [
   // 3D Accessories
   Model3D(

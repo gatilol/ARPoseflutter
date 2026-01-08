@@ -42,7 +42,17 @@ class FaceArManager: NSObject {
     private var faceMeshMaterial: SCNMaterial?
     
     /// Visibilité du mesh facial
-    private var isFaceMeshVisible: Bool = true
+    // ========== CONFIGURATION DÉVELOPPEUR ==========
+    // Mettre à true pour afficher le mesh facial (debug)
+    // Mettre à false pour le cacher (production/grand public)
+    private var isFaceMeshVisible: Bool = false
+    
+    // Offset vertical du maquillage (pour ajuster le positionnement)
+    // Valeur NÉGATIVE = texture MONTE sur le visage (ex: -0.03)
+    // Valeur POSITIVE = texture DESCEND sur le visage (ex: 0.03)
+    // Ajuster selon les besoins (essayer -0.02 à -0.05 pour remonter)
+    private let makeupVerticalOffset: Float = 0.05
+    // ================================================
     
     /// Couleur du mesh (format ARGB)
     private var meshColor: Int = 0x8800FF00  // Vert semi-transparent
@@ -85,7 +95,14 @@ class FaceArManager: NSObject {
     private func setupDefaultMaterial() {
         faceMeshMaterial = SCNMaterial()
         faceMeshMaterial?.lightingModel = .physicallyBased
-        faceMeshMaterial?.diffuse.contents = colorFromARGB(meshColor)
+        
+        // Si mesh non visible, le rendre transparent (pas caché, pour que le maquillage fonctionne)
+        if isFaceMeshVisible {
+            faceMeshMaterial?.diffuse.contents = colorFromARGB(meshColor)
+        } else {
+            faceMeshMaterial?.diffuse.contents = UIColor.clear
+        }
+        
         faceMeshMaterial?.isDoubleSided = true
         faceMeshMaterial?.writesToDepthBuffer = true
         faceMeshMaterial?.readsFromDepthBuffer = true
@@ -111,9 +128,44 @@ class FaceArManager: NSObject {
             configuration.maximumNumberOfTrackedFaces = 1
         }
         
+        // Configurer l'éclairage de la scène pour les modèles 3D
+        sceneView?.autoenablesDefaultLighting = true
+        sceneView?.automaticallyUpdatesLighting = true
+        
+        // Ajouter une lumière ambiante pour éviter les modèles noirs
+        addAmbientLight()
+        
         sceneView?.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         print("[FaceArManager] Face tracking started")
         return true
+    }
+    
+    /// Ajoute une lumière ambiante à la scène
+    private func addAmbientLight() {
+        // Lumière ambiante pour illuminer uniformément
+        let ambientLight = SCNLight()
+        ambientLight.type = .ambient
+        ambientLight.intensity = 1000
+        ambientLight.color = UIColor.white
+        
+        let ambientLightNode = SCNNode()
+        ambientLightNode.light = ambientLight
+        ambientLightNode.name = "faceAR_ambientLight"
+        sceneView?.scene.rootNode.addChildNode(ambientLightNode)
+        
+        // Lumière directionnelle pour donner du relief
+        let directionalLight = SCNLight()
+        directionalLight.type = .directional
+        directionalLight.intensity = 500
+        directionalLight.color = UIColor.white
+        
+        let directionalLightNode = SCNNode()
+        directionalLightNode.light = directionalLight
+        directionalLightNode.position = SCNVector3(0, 1, 1)
+        directionalLightNode.name = "faceAR_directionalLight"
+        sceneView?.scene.rootNode.addChildNode(directionalLightNode)
+        
+        print("[FaceArManager] Lights added to scene")
     }
     
     /// Arrête le tracking facial
@@ -151,7 +203,7 @@ class FaceArManager: NSObject {
         isFaceDetected = true
         
         DispatchQueue.main.async {
-            self.anchorManagerChannel?.invokeMethod("onFaceDetected", arguments: ["detected": true])
+            self.sessionManagerChannel?.invokeMethod("onFaceDetected", arguments: true)
         }
     }
     
@@ -176,7 +228,7 @@ class FaceArManager: NSObject {
         faceMeshNode = nil
         
         DispatchQueue.main.async {
-            self.anchorManagerChannel?.invokeMethod("onFaceDetected", arguments: ["detected": false])
+            self.sessionManagerChannel?.invokeMethod("onFaceDetected", arguments: false)
         }
     }
     
@@ -198,7 +250,9 @@ class FaceArManager: NSObject {
             geometry.firstMaterial = material
         }
         
-        faceMeshNode?.isHidden = !isFaceMeshVisible
+        // NE PAS cacher le mesh - le rendre transparent si besoin
+        // Cela permet au maquillage de s'afficher même si isFaceMeshVisible = false
+        faceMeshNode?.isHidden = false
         node.addChildNode(faceMeshNode!)
         
         // Appliquer la texture si définie
@@ -206,13 +260,25 @@ class FaceArManager: NSObject {
             applyMakeupTexture(texturePath)
         }
         
-        print("[FaceArManager] Face mesh created (1220 vertices)")
+        print("[FaceArManager] Face mesh created (1220 vertices), visible: \(isFaceMeshVisible)")
     }
     
-    /// Définit la visibilité du mesh
+    /// Définit la visibilité du mesh (couleur de base, pas le maquillage)
     func setFaceMeshVisible(_ visible: Bool) {
         isFaceMeshVisible = visible
-        faceMeshNode?.isHidden = !visible
+        
+        // Ne pas utiliser isHidden - ça cacherait aussi le maquillage
+        // Au lieu de ça, rendre le matériau transparent ou coloré
+        if makeupTexture == nil {
+            // Pas de maquillage - appliquer la couleur ou transparent
+            if visible {
+                faceMeshMaterial?.diffuse.contents = colorFromARGB(meshColor)
+            } else {
+                faceMeshMaterial?.diffuse.contents = UIColor.clear
+            }
+        }
+        // Si maquillage présent, ne pas toucher au diffuse (il contient la texture)
+        
         print("[FaceArManager] Mesh visibility: \(visible)")
     }
     
@@ -227,6 +293,17 @@ class FaceArManager: NSObject {
         
         faceMeshMaterial?.diffuse.contents = colorFromARGB(colorValue)
         print("[FaceArManager] Mesh color updated")
+    }
+    
+    /// Définit la couleur du mesh (UIColor)
+    func setFaceMeshColor(_ color: UIColor) {
+        // Si une texture est appliquée, la supprimer
+        if makeupTexture != nil {
+            clearMakeupTexture()
+        }
+        
+        faceMeshMaterial?.diffuse.contents = color
+        print("[FaceArManager] Mesh color updated (UIColor)")
     }
     
     // MARK: - Makeup Texture
@@ -257,6 +334,12 @@ class FaceArManager: NSObject {
         faceMeshMaterial?.lightingModel = .constant
         faceMeshMaterial?.diffuse.contents = image
         
+        // ========== OFFSET VERTICAL DU MAQUILLAGE ==========
+        // Applique un décalage pour ajuster la position de la texture
+        // Translation sur Y pour remonter la texture sur le visage
+        faceMeshMaterial?.diffuse.contentsTransform = SCNMatrix4MakeTranslation(0, makeupVerticalOffset, 0)
+        // ===================================================
+        
         // Configuration du filtrage
         faceMeshMaterial?.diffuse.wrapS = .clamp
         faceMeshMaterial?.diffuse.wrapT = .clamp
@@ -268,7 +351,7 @@ class FaceArManager: NSObject {
         faceMeshMaterial?.transparencyMode = .dualLayer
         faceMeshMaterial?.blendMode = .alpha
         
-        print("[FaceArManager] Makeup texture applied: \(Int(image.size.width))x\(Int(image.size.height))")
+        print("[FaceArManager] Makeup texture applied: \(Int(image.size.width))x\(Int(image.size.height)), offset: \(makeupVerticalOffset)")
     }
     
     /// Supprime la texture makeup
@@ -277,7 +360,16 @@ class FaceArManager: NSObject {
         makeupTexturePath = nil
         
         faceMeshMaterial?.lightingModel = .physicallyBased
-        faceMeshMaterial?.diffuse.contents = colorFromARGB(meshColor)
+        
+        // Réinitialiser le transform de la texture
+        faceMeshMaterial?.diffuse.contentsTransform = SCNMatrix4Identity
+        
+        // Remettre la couleur ou transparent selon isFaceMeshVisible
+        if isFaceMeshVisible {
+            faceMeshMaterial?.diffuse.contents = colorFromARGB(meshColor)
+        } else {
+            faceMeshMaterial?.diffuse.contents = UIColor.clear
+        }
         
         print("[FaceArManager] Makeup texture cleared")
     }
@@ -350,7 +442,8 @@ class FaceArManager: NSObject {
     
     /// Charge un modèle GLTF via GLTFSceneKit
     private func loadGLTFModel(url: URL, name: String) -> SCNNode? {
-        // Utiliser la même méthode que ArModelBuilder (path au lieu de url)
+        print("[FaceArManager] Loading GLTF model from: \(url.path)")
+        
         do {
             let sceneSource = try GLTFSceneSource(path: url.path)
             let scene = try sceneSource.scene()
@@ -358,15 +451,49 @@ class FaceArManager: NSObject {
             let node = SCNNode()
             node.name = name
             
+            print("[FaceArManager] GLTF scene loaded, childNodes: \(scene.rootNode.childNodes.count)")
+            
             for child in scene.rootNode.childNodes {
-                child.scale = SCNVector3(0.01, 0.01, 0.01)  // Conversion mm -> m
-                node.addChildNode(child.flattenedClone())
+                let clonedChild = child.flattenedClone()
+                
+                // Configurer les matériaux pour répondre à la lumière
+                configureMaterialsForLighting(node: clonedChild)
+                
+                node.addChildNode(clonedChild)
             }
             
+            print("[FaceArManager] GLTF node '\(name)' created successfully")
             return node
         } catch {
             print("[FaceArManager] GLTF loading error: \(error.localizedDescription)")
             return nil
+        }
+    }
+    
+    /// Configure les matériaux d'un nœud pour qu'ils répondent à la lumière
+    private func configureMaterialsForLighting(node: SCNNode) {
+        // Configurer le matériau de ce nœud
+        if let geometry = node.geometry {
+            for material in geometry.materials {
+                // Si le diffuse est noir ou non défini, utiliser une couleur par défaut
+                if material.diffuse.contents == nil {
+                    material.diffuse.contents = UIColor.white
+                }
+                
+                // Utiliser un modèle d'éclairage qui fonctionne bien avec les lumières
+                // blinn est un bon compromis entre réalisme et compatibilité
+                material.lightingModel = .blinn
+                
+                // S'assurer que le matériau est visible des deux côtés
+                material.isDoubleSided = true
+                
+                print("[FaceArManager] Material configured: \(material.name ?? "unnamed")")
+            }
+        }
+        
+        // Récursivement configurer les enfants
+        for child in node.childNodes {
+            configureMaterialsForLighting(node: child)
         }
     }
     
@@ -509,6 +636,10 @@ class FaceArManager: NSObject {
             info.node.removeFromParentNode()
         }
         regionNodes.removeAll()
+        
+        // Supprimer les lumières ajoutées
+        sceneView?.scene.rootNode.childNode(withName: "faceAR_ambientLight", recursively: false)?.removeFromParentNode()
+        sceneView?.scene.rootNode.childNode(withName: "faceAR_directionalLight", recursively: false)?.removeFromParentNode()
         
         faceNode = nil
         isFaceDetected = false

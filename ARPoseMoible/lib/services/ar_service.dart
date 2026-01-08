@@ -22,6 +22,14 @@ class ARService {
   final ARState state;
   String modelPath;
   final String reticlePath;
+  
+  // ========== SCALE DU MODÈLE ==========
+  /// Scale factor pour le modèle 3D World AR
+  /// 1.0 = taille originale du modèle
+  /// 0.5 = moitié de la taille originale
+  /// 2.0 = double de la taille originale
+  double modelScale;
+  // =====================================
 
   // Reticle tracking
   ar_models.ARNode? _reticleNode;
@@ -43,12 +51,31 @@ class ARService {
     required this.state,
     required this.modelPath,
     required this.reticlePath,
+    this.modelScale = 1.0, // ← Taille originale par défaut
   });
 
-  /// Update the current World AR model path
+  // ========== UPDATE MODEL METHODS ==========
+  
+  /// Update the current World AR model path and scale
+  /// [newModelPath] - Path to the 3D model asset
+  /// [scale] - Scale factor (1.0 = original size)
+  void updateModel(String newModelPath, {double scale = 1.0}) {
+    modelPath = newModelPath;
+    modelScale = scale;
+    debugPrint('[ARService] Model updated: $modelPath, scale: $modelScale');
+  }
+  
+  /// Update the current World AR model path (keeps current scale)
   void updateModelPath(String newModelPath) {
     modelPath = newModelPath;
   }
+  
+  /// Update only the scale (keeps current model)
+  void updateModelScale(double scale) {
+    modelScale = scale;
+    debugPrint('[ARService] Scale updated: $modelScale');
+  }
+  // ==========================================
 
   /// Initialize AR managers when ARView is created
   void onARViewCreated(
@@ -190,11 +217,14 @@ class ARService {
         return;
       }
 
+      // ========== UTILISE modelScale AU LIEU DE kDefaultModelScale ==========
       final node = ar_models.ARNode(
         type: ar_types.NodeType.localGLTF2,
         uri: modelPath,
-        scale: vector.Vector3(kDefaultModelScale, kDefaultModelScale, kDefaultModelScale),
+        scale: vector.Vector3(modelScale, modelScale, modelScale),
       );
+      debugPrint('[ARService] Placing model with scale: $modelScale');
+      // =====================================================================
 
       final nodeId = await objectManager.addNode(node, planeAnchor: modelAnchor);
 

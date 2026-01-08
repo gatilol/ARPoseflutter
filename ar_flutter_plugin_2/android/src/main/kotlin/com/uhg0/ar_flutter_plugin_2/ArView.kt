@@ -755,12 +755,25 @@ class ArView(
         }
         
         val transformation = nodeData["transformation"] as? ArrayList<Double> ?: return null
+        
+        // ========== EXTRACTION DU SCALE (scaleToUnits) ==========
+        // Le scale dans la matrice Flutter représente la TAILLE CIBLE en mètres
+        // scaleToUnits normalise le modèle pour qu'il fasse cette taille
+        val m = FloatArray(16) { i -> transformation[i].toFloat() }
+        val scaleToUnitsValue = kotlin.math.sqrt(m[0]*m[0] + m[1]*m[1] + m[2]*m[2])
+        Log.d(TAG, "scaleToUnits value: $scaleToUnitsValue meters")
+        // ========================================================
 
         return try {
             sceneView.modelLoader.loadModelInstance(fileLocation)?.let { modelInstance ->
                 object : ModelNode(
                     modelInstance = modelInstance,
-                    scaleToUnits = transformation.first().toFloat(),
+                    // ========== scaleToUnits ==========
+                    // Normalise le modèle pour qu'il fasse scaleToUnitsValue mètres
+                    // Ex: 0.15 → modèle de 15 cm
+                    // Ex: 1.0 → modèle de 1 mètre
+                    scaleToUnits = scaleToUnitsValue,
+                    // ==================================
                 ) {
                     override fun onMove(detector: MoveGestureDetector, e: MotionEvent): Boolean {
                         if (handlePans) {

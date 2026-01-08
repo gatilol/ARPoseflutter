@@ -32,8 +32,8 @@ Features:
   s.source_files = 'Classes/**/*'
   
   # Platform requirements
-  s.platform = :ios, '13.0'
-  s.ios.deployment_target = '13.0'
+  s.platform = :ios, '15.0'
+  s.ios.deployment_target = '15.0'
   
   # Swift version
   s.swift_version = '5.0'
@@ -41,9 +41,14 @@ Features:
   # Flutter dependency
   s.dependency 'Flutter'
   
-  # GLTFKit2 for loading GLB/GLTF 3D models
-  # This is a well-maintained library that converts GLTF to SceneKit
-  s.dependency 'GLTFKit2', '~> 0.5'
+  # GLTFSceneKit for loading GLB/GLTF 3D models into SceneKit
+  s.dependency 'GLTFSceneKit'
+  
+  # ARCore for Cloud Anchors
+  s.dependency 'ARCore/CloudAnchors', '~> 1.46'
+  
+  # SwiftJWT for authentication with ARCore
+  s.dependency 'SwiftJWT', '~> 3.6'
   
   # iOS Frameworks
   s.frameworks = [

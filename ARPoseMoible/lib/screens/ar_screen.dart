@@ -35,6 +35,9 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
 
   // World AR model paths
   String currentWorldModelPath = kDefaultWorldModelPath;
+  // ========== SCALE DU MODÈLE PAR DÉFAUT ==========
+  double currentWorldModelScale = worldModels.isNotEmpty ? worldModels.first.scale : 1.0;
+  // ================================================
 
   // Face AR filter paths
   String currentFaceModelPath = '';
@@ -49,16 +52,21 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
   bool _isAugmentedImageDetected = false;
   bool _isAugmentedImage3DActive = false;
   String? _detectedImageName;
+  
+  // Session initialization state
+  bool _isSessionInitialized = false;
 
   @override
   void initState() {
     super.initState();
+    debugPrint("DEBUG: ArScreen initState called!");
 
     arState = ARState();
     arService = ARService(
       state: arState,
       modelPath: currentWorldModelPath,
       reticlePath: kReticlePath,
+      modelScale: currentWorldModelScale,  // ← PASSE LE SCALE PAR DÉFAUT
     );
     photoService = PhotoService(state: arState);
 
@@ -92,11 +100,14 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
     HapticFeedback.lightImpact();
 
     if (arState.isWorldMode) {
-      // World AR: Update 3D model
+      // World AR: Update 3D model with scale
       setState(() {
         currentWorldModelPath = model.path;
+        currentWorldModelScale = model.scale;  // ← MISE À JOUR DU SCALE
       });
-      arService.updateModelPath(currentWorldModelPath);
+      // ========== PASSE LE SCALE DU MODÈLE ==========
+      arService.updateModel(model.path, scale: model.scale);
+      // ==============================================
 
       SnackBarHelper.show(
         context,
@@ -382,6 +393,7 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
+    debugPrint("DEBUG: ArScreen build called!");
     return Scaffold(
       backgroundColor: Colors.black,
       body: AnimatedBuilder(
@@ -394,7 +406,11 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                 // AR View
                 ARView(
                   onARViewCreated: (sessionManager, objectManager, anchorManager, locationManager) {
+                    debugPrint("DEBUG: onARViewCreated called!");
                     arService.onARViewCreated(sessionManager, objectManager, anchorManager);
+                    setState(() {
+                      _isSessionInitialized = true;
+                    });
                     _setupAugmentedImages();
                   },
                   planeDetectionConfig: arState.isWorldMode
@@ -429,8 +445,8 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                     },
                   ),
 
-                // AR Overlays
-                if (!_isSwitchingCamera)
+                // AR Overlays - only show when session is initialized
+                if (!_isSwitchingCamera && _isSessionInitialized)
                   AROverlays(
                     state: arState,
                     onClose: () => Navigator.pop(context),
@@ -471,8 +487,9 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
                     onToggleAugmentedImage3D: _toggleAugmentedImage3D,
                   ),
 
-                // Model selector menu
-                ModelSelectorMenu(
+                // Model selector menu - only show when session is initialized
+                if (_isSessionInitialized)
+                  ModelSelectorMenu(
                   isOpen: isModelMenuOpen,
                   onClose: () {
                     setState(() {
