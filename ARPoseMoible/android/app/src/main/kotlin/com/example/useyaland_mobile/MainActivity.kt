@@ -1,4 +1,4 @@
-package com.example.test_webview
+package com.example.useyaland_mobile
 
 import io.flutter.embedding.android.FlutterActivity
 
