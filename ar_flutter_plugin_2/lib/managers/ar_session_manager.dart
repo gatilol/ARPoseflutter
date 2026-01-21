@@ -138,6 +138,12 @@ class ARSessionManager {
     });
   }
 
+  void showFeaturePoints(bool show) {
+    _channel.invokeMethod<void>('showFeaturePoints', {
+      "showFeaturePoints": show,
+    });
+  }
+
   Future<void> _platformCallHandler(MethodCall call) {
     if (debug) {
       print('_platformCallHandler call ${call.method} ${call.arguments}');
@@ -220,7 +226,7 @@ class ARSessionManager {
   onInitialize({
     bool showAnimatedGuide = true,
     bool showFeaturePoints = false,
-    bool showPlanes = true,
+    bool showPlanes = false,
     String? customPlaneTexturePath,
     bool showWorldOrigin = false,
     bool handleTaps = true,
