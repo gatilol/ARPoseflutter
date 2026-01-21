@@ -68,7 +68,10 @@ class _ArScreenState extends State<ArScreen> with SingleTickerProviderStateMixin
       reticlePath: kReticlePath,
       modelScale: currentWorldModelScale,  // ← PASSE LE SCALE PAR DÉFAUT
     );
-    photoService = PhotoService(state: arState);
+    photoService = PhotoService(
+      state: arState,
+      arService: arService,  // ← AJOUT POUR iOS PHOTO CAPTURE
+    );
 
     // Camera switch animation setup
     _switchAnimationController = AnimationController(
