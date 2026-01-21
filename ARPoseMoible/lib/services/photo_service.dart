@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -10,14 +9,19 @@ import 'package:ar_flutter_plugin_2/managers/ar_session_manager.dart';
 
 import '../config/app_config.dart';
 import '../models/ar_state.dart';
+import '../services/ar_service.dart';
 import '../utils/snackbar_helper.dart';
 
 /// Service responsible for capturing and saving AR photos
 class PhotoService {
   final ARState state;
   ARSessionManager? sessionManager; // Ajout du session manager
+  final ARService arService;
 
-  PhotoService({required this.state});
+  PhotoService({
+    required this.state,
+    required this.arService,
+  });
 
   /// Set the AR session manager (call this after ARView is created)
   void setSessionManager(ARSessionManager manager) {
@@ -25,6 +29,12 @@ class PhotoService {
   }
 
   /// Capture the current AR view and save it to the device gallery
+  ///
+  /// On iOS: Uses native sceneView.snapshot() via platform channel
+  ///         (ScreenshotController cannot capture UiKitView/PlatformView)
+  ///
+  /// On Android: Uses Flutter ScreenshotController
+  ///             (Works with AndroidView/Hybrid Composition)
   Future<void> takeAndSavePhoto(
       ScreenshotController controller,
       BuildContext context,
@@ -40,6 +50,17 @@ class PhotoService {
       // Wait for the next frame to ensure planes and UI are hidden
       await Future<void>.delayed(const Duration(milliseconds: 100));
       await WidgetsBinding.instance.endOfFrame;
+
+      // Platform-specific capture
+      Uint8List? bytes;
+
+      if (Platform.isIOS) {
+        // iOS: Use native ARKit snapshot (captures camera + 3D content)
+        bytes = await arService.captureSnapshot();
+      } else {
+        // Android: Use Flutter ScreenshotController
+        bytes = await controller.capture();
+      }
 
       // Capture screenshot
       final Uint8List? bytes = await controller.capture();

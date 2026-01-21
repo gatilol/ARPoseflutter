@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:ar_flutter_plugin_2/managers/ar_session_manager.dart';
 import 'package:ar_flutter_plugin_2/managers/ar_object_manager.dart';
 import 'package:ar_flutter_plugin_2/managers/ar_anchor_manager.dart';
@@ -442,6 +444,23 @@ class ARService {
       state.setMode(_currentMode);
       onModeChanged?.call(_currentMode);
     };
+  }
+
+
+  // ──────────────────────────────────────────────────────────────
+  // Photo Capture (iOS Native)
+  // ──────────────────────────────────────────────────────────────
+
+  /// Capture a snapshot of the current AR view using native method
+  /// Works for both World AR (with 3D models) and Face AR (with face mesh/makeup)
+  /// Returns PNG bytes or null if capture failed
+  Future<Uint8List?> captureSnapshot() async {
+    try {
+      return await sessionManager.snapshotBytes();
+    } catch (e) {
+      debugPrint('[ARService] Error capturing AR snapshot: $e');
+      return null;
+    }
   }
 
 

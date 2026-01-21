@@ -29,10 +29,10 @@ class ARSessionManager {
   final PlaneDetectionConfig planeDetectionConfig;
 
   /// Receives hit results from user taps with tracked planes or feature points
-  ARHitResultHandler? onPlaneOrPointTap;
+  late ARHitResultHandler onPlaneOrPointTap;
 
   /// Receives total number of Planes when a plane is detected and added to the view
-  ARPlaneResultHandler? onPlaneDetected;
+  late ARPlaneResultHandler onPlaneDetected;
 
   /// Callback that is triggered once error is triggered
   ErrorHandler? onError;
@@ -174,13 +174,13 @@ class ARSessionManager {
             final hitTestResults = serializedHitTestResults.map((e) {
               return ARHitTestResult.fromJson(e);
             }).toList();
-            onPlaneOrPointTap!(hitTestResults);
+            onPlaneOrPointTap(hitTestResults);
           }
           break;
         case 'onPlaneDetected':
           if (onPlaneDetected != null) {
             final planeCountResult = call.arguments as int;
-            onPlaneDetected!(planeCountResult);
+            onPlaneDetected(planeCountResult);
           }
           break;
         // ========== Face AR Callbacks ==========
@@ -264,6 +264,24 @@ class ARSessionManager {
   }
 
   // ==================================================================================
+  // ========================= iOS PHOTO CAPTURE ======================================
+  // ==================================================================================
+
+  /// Returns raw PNG bytes of the AR snapshot (for saving to file)
+  /// This uses native sceneView.snapshot() on iOS which captures:
+  /// - Camera feed (front or back)
+  /// - All 3D objects and models
+  /// - Face mesh with textures (makeup effects)
+  Future<Uint8List?> snapshotBytes() async {
+    try {
+      return await _channel.invokeMethod<Uint8List>('snapshot');
+    } catch (e) {
+      print('[ARSessionManager] Error capturing snapshot: $e');
+      return null;
+    }
+  }
+
+  // ==================================================================================
   // ========================= FACE AR METHODS ========================================
   // ==================================================================================
 
@@ -280,6 +298,8 @@ class ARSessionManager {
   }
 
   /// Switch to Face AR mode (front camera, face detection)
+  /// [modelPath] - Optional path to GLB model in Flutter assets
+  /// [texturePath] - Optional path to texture
   Future<bool> switchToFaceAR({String? modelPath, String? texturePath}) async {
     try {
       final result = await _channel.invokeMethod<Map<Object?, Object?>>('switchToFaceAR', {
