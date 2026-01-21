@@ -16,6 +16,10 @@ class PhotoService {
   final ARState state;
   final ARService arService;
 
+  /// Minimum time (in milliseconds) to hide overlays during capture
+  /// This ensures a smooth visual experience even if capture is fast
+  static const int _minimumOverlayHideTime = 1000; // 1 seconde
+
   PhotoService({
     required this.state,
     required this.arService,
@@ -33,6 +37,9 @@ class PhotoService {
     BuildContext context,
   ) async {
     try {
+      // Start timing for minimum overlay hide duration
+      final startTime = DateTime.now();
+
       // Hide UI overlays during capture
       state.setCapturing(true);
 
@@ -51,11 +58,9 @@ class PhotoService {
         bytes = await controller.capture();
       }
 
-      state.setCapturing(false);
-
       if (bytes == null) throw Exception('Capture failed');
 
-      // Haptic feedback on capture
+      // Haptic feedback on capture (1st feedback - photo taken)
       HapticFeedback.mediumImpact();
 
       // Save to temporary file
@@ -67,6 +72,21 @@ class PhotoService {
 
       // Save to gallery
       await Gal.putImage(imagePath);
+
+      // Calculate remaining time to reach minimum overlay hide duration
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      final remainingTime = _minimumOverlayHideTime - elapsed;
+
+      // Wait for remaining time if capture was faster than minimum duration
+      if (remainingTime > 0) {
+        await Future.delayed(Duration(milliseconds: remainingTime));
+      }
+
+      // Haptic feedback after wait (2nd feedback - overlays returning)
+      HapticFeedback.mediumImpact();
+
+      // Re-show overlays
+      state.setCapturing(false);
 
       // Show success notification (longer duration for important feedback)
       if (context.mounted) {
