@@ -89,7 +89,7 @@ class ArView(
     private var isSessionPaused = false
 
     // ========== Stored Init Parameters ==========
-    private var storedShowPlanes = true
+    private var storedShowPlanes = false
     private var storedHandleTaps = true
     private var storedPlaneDetectionConfig = 1
     private var storedShowFeaturePoints = false
