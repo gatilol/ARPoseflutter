@@ -19,6 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Key _webViewKey = UniqueKey();
   bool _isResetting = false;
+  bool _isNavigatingToAR = false;  // Flag pour libérer la WebView avant navigation AR
 
   // URL de démarrage
   String _initialUrl = kWebViewUrl;
@@ -105,8 +106,8 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.transparent,
         body: Stack(
           children: [
-            // Afficher la WebView uniquement si elle n'est pas en train d'être reset
-            if (webViewController != null || !_isResetting)
+            // Afficher la WebView uniquement si elle n'est pas en train d'être reset ou navigation AR
+            if (!_isNavigatingToAR && (webViewController != null || !_isResetting))
               InAppWebView(
                 key: _webViewKey,
                 initialUrlRequest: URLRequest(
@@ -263,17 +264,36 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _openARCamera() {
-    Navigator.push(
+  void _openARCamera() async {
+    // 1. Libérer la WebView AVANT de naviguer (évite freeze pendant AR)
+    setState(() {
+      _isNavigatingToAR = true;
+    });
+    
+    // 2. Attendre que la WebView soit détruite
+    await Future.delayed(const Duration(milliseconds: 200));
+    
+    // 3. Naviguer vers AR
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => const ArScreen(),
       ),
-    ).then((result) {
+    );
+    
+    // 4. Au retour, recréer la WebView
+    if (mounted) {
+      setState(() {
+        _isNavigatingToAR = false;
+        _webViewKey = UniqueKey();  // Force la recréation
+      });
+      
       if (result != null && result is Map) {
+        // Attendre que la WebView soit recréée avant d'envoyer le résultat
+        await Future.delayed(const Duration(milliseconds: 500));
         _sendResultToWebView(result);
       }
-    });
+    }
   }
 
 

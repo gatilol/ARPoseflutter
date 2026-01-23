@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -15,7 +16,7 @@ import '../utils/snackbar_helper.dart';
 /// Service responsible for capturing and saving AR photos
 class PhotoService {
   final ARState state;
-  ARSessionManager? sessionManager; // Ajout du session manager
+  ARSessionManager? sessionManager;
   final ARService arService;
 
   /// Minimum time (in milliseconds) to hide overlays during capture
@@ -40,16 +41,15 @@ class PhotoService {
   /// On Android: Uses Flutter ScreenshotController
   ///             (Works with AndroidView/Hybrid Composition)
   Future<void> takeAndSavePhoto(
-      ScreenshotController controller,
-      BuildContext context,
-      ) async {
+    ScreenshotController controller,
+    BuildContext context,
+  ) async {
     try {
       // Start timing for minimum overlay hide duration
       final startTime = DateTime.now();
 
       // Hide planes before capture
       sessionManager?.showPlanes(false);
-      sessionManager?.showFeaturePoints(false);
 
       // Hide UI overlays during capture
       state.setCapturing(true);
@@ -69,13 +69,8 @@ class PhotoService {
         bytes = await controller.capture();
       }
 
-      // Capture screenshot
-      final Uint8List? bytes = await controller.capture();
-
       // Restore planes visibility
       sessionManager?.showPlanes(true);
-      sessionManager?.showFeaturePoints(true);
-      state.setCapturing(false);
 
       if (bytes == null) throw Exception('Capture failed');
 
@@ -121,7 +116,6 @@ class PhotoService {
     } catch (e) {
       // Restore planes visibility in case of error
       sessionManager?.showPlanes(true);
-      sessionManager?.showFeaturePoints(true);
       state.setCapturing(false);
 
       // Show error notification
@@ -158,7 +152,7 @@ class PhotoService {
     canvas.drawImage(originalImage, Offset.zero, Paint());
 
     // Calculate watermark size and position
-    final double watermarkWidth = originalImage.width * 0.35; // 15% de la largeur
+    final double watermarkWidth = originalImage.width * 0.35; // 35% de la largeur
     final double watermarkHeight = logoImage.height * (watermarkWidth / logoImage.width);
 
     final double padding = 40.0;
@@ -179,7 +173,7 @@ class PhotoService {
         watermarkWidth + 20,
         watermarkHeight + 20,
       ),
-      Radius.circular(8),
+      const Radius.circular(8),
     );
     canvas.drawRRect(backgroundRect, backgroundPaint);
 

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ar_flutter_plugin_2/managers/ar_session_manager.dart';
@@ -98,8 +99,29 @@ class ARService {
     );
 
     sessionManager.onPlaneOrPointTap = (hits) => onPlaneOrPointTapped(hits);
+    
+    sessionManager.onPlaneDetected = (planeCount) {
+      debugPrint('[ARService] Planes detected: $planeCount');
+    };
 
     setupFaceARCallbacks();
+    
+    // iOS: Preload default model to avoid freeze on first placement
+    if (Platform.isIOS) {
+      _preloadDefaultModel();
+    }
+  }
+
+  /// Preload the default 3D model in background to avoid freeze on first placement
+  /// This is iOS-specific as SceneKit/Metal needs to compile shaders on first load
+  Future<void> _preloadDefaultModel() async {
+    try {
+      debugPrint('[ARService] iOS: Preloading default model: $modelPath');
+      await sessionManager.preloadModel(modelPath);
+      debugPrint('[ARService] iOS: Model preloaded successfully');
+    } catch (e) {
+      debugPrint('[ARService] iOS: Preload failed (non-critical): $e');
+    }
   }
 
 

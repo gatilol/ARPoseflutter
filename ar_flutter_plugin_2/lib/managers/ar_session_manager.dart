@@ -138,12 +138,6 @@ class ARSessionManager {
     });
   }
 
-  void showFeaturePoints(bool show) {
-    _channel.invokeMethod<void>('showFeaturePoints', {
-      "showFeaturePoints": show,
-    });
-  }
-
   Future<void> _platformCallHandler(MethodCall call) {
     if (debug) {
       print('_platformCallHandler call ${call.method} ${call.arguments}');
@@ -226,7 +220,7 @@ class ARSessionManager {
   onInitialize({
     bool showAnimatedGuide = true,
     bool showFeaturePoints = false,
-    bool showPlanes = false,
+    bool showPlanes = true,
     String? customPlaneTexturePath,
     bool showWorldOrigin = false,
     bool handleTaps = true,
@@ -263,20 +257,14 @@ class ARSessionManager {
     return MemoryImage(result!);
   }
 
-  // ==================================================================================
-  // ========================= iOS PHOTO CAPTURE ======================================
-  // ==================================================================================
-
-  /// Returns raw PNG bytes of the AR snapshot (for saving to file)
-  /// This uses native sceneView.snapshot() on iOS which captures:
-  /// - Camera feed (front or back)
-  /// - All 3D objects and models
-  /// - Face mesh with textures (makeup effects)
+  /// Returns a future Uint8List (PNG bytes) of the current AR Scene
+  /// Used for iOS photo capture where ScreenshotController can't capture UiKitView
   Future<Uint8List?> snapshotBytes() async {
     try {
-      return await _channel.invokeMethod<Uint8List>('snapshot');
+      final result = await _channel.invokeMethod<Uint8List>('snapshot');
+      return result;
     } catch (e) {
-      print('[ARSessionManager] Error capturing snapshot: $e');
+      print('Error capturing snapshot bytes: $e');
       return null;
     }
   }
@@ -298,8 +286,6 @@ class ARSessionManager {
   }
 
   /// Switch to Face AR mode (front camera, face detection)
-  /// [modelPath] - Optional path to GLB model in Flutter assets
-  /// [texturePath] - Optional path to texture
   Future<bool> switchToFaceAR({String? modelPath, String? texturePath}) async {
     try {
       final result = await _channel.invokeMethod<Map<Object?, Object?>>('switchToFaceAR', {
@@ -511,6 +497,25 @@ class ARSessionManager {
     } catch (e) {
       print('Error getting detected augmented images: $e');
       return null;
+    }
+  }
+
+  // ==================================================================================
+  // ========================= iOS MODEL PRELOADING ===================================
+  // ==================================================================================
+
+  /// Preload a 3D model in background (iOS only)
+  /// This forces SceneKit/Metal to compile shaders before the model is needed
+  /// Prevents freeze on first model placement
+  Future<bool> preloadModel(String modelPath) async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>('preloadModel', {
+        'modelPath': modelPath,
+      });
+      return result?['success'] == true;
+    } catch (e) {
+      print('Error preloading model: $e');
+      return false;
     }
   }
 
