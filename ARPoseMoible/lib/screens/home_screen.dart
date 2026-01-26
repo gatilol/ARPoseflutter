@@ -123,10 +123,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   clearCache: false,
 
                   // disable zoom controls
+                    // ===== ANDROID - disable zoom =====
                   supportZoom: false,
                   builtInZoomControls: false,
                   displayZoomControls: false,
-                  ignoresViewportScaleLimits: true,
+                  
+                  // ===== iOS - disable zoom =====
+                  minimumZoomScale: 1.0,
+                  maximumZoomScale: 1.0,
+
+
+                  ignoresViewportScaleLimits: false,
                 ),
                 onWebViewCreated: _onWebViewCreated,
 
