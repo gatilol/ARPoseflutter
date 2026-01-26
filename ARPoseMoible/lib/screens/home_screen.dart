@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:io' show Platform;
 
 import '../config/app_config.dart';
 import '../widgets/connection_error_page.dart';
@@ -19,7 +20,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Key _webViewKey = UniqueKey();
   bool _isResetting = false;
-  bool _isNavigatingToAR = false;  // Flag pour libérer la WebView avant navigation AR
 
   // URL de démarrage
   String _initialUrl = kWebViewUrl;
@@ -106,8 +106,8 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.transparent,
         body: Stack(
           children: [
-            // Afficher la WebView uniquement si elle n'est pas en train d'être reset ou navigation AR
-            if (!_isNavigatingToAR && (webViewController != null || !_isResetting))
+            // Afficher la WebView uniquement si elle n'est pas en train d'être reset
+            if (webViewController != null || !_isResetting)
               InAppWebView(
                 key: _webViewKey,
                 initialUrlRequest: URLRequest(
@@ -139,6 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     await _openInExternalBrowser(uri.toString());
                     return NavigationActionPolicy.CANCEL;
                   }
+
 
                   if (uri.scheme == 'http' || uri.scheme == 'https') {
                     return NavigationActionPolicy.ALLOW;
@@ -214,6 +215,9 @@ class _HomeScreenState extends State<HomeScreen> {
       case 'pelicular':
         _openARCamera();
         break;
+      case 'map':
+        _openMap();
+        break;
     }
   }
 
@@ -264,35 +268,47 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _openARCamera() async {
-    // 1. Libérer la WebView AVANT de naviguer (évite freeze pendant AR)
-    setState(() {
-      _isNavigatingToAR = true;
-    });
-    
-    // 2. Attendre que la WebView soit détruite
-    await Future.delayed(const Duration(milliseconds: 200));
-    
-    // 3. Naviguer vers AR
-    final result = await Navigator.push(
+  void _openARCamera() {
+    Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => const ArScreen(),
       ),
-    );
-    
-    // 4. Au retour, recréer la WebView
-    if (mounted) {
-      setState(() {
-        _isNavigatingToAR = false;
-        _webViewKey = UniqueKey();  // Force la recréation
-      });
-      
+    ).then((result) {
       if (result != null && result is Map) {
-        // Attendre que la WebView soit recréée avant d'envoyer le résultat
-        await Future.delayed(const Duration(milliseconds: 500));
         _sendResultToWebView(result);
       }
+    });
+  }
+
+
+
+  void _openMap() async {
+    const double latitude = 34.654582;
+    const double longitude = 135.430080;
+
+    Uri mapUrl;
+
+    if (Platform.isIOS) {
+      // Apple Maps pour iOS
+      mapUrl = Uri.parse('https://maps.apple.com/?q=$latitude,$longitude&ll=$latitude,$longitude');
+    } else {
+      // Google Maps pour Android
+      mapUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=$latitude,$longitude');
+    }
+
+    try {
+      if (await canLaunchUrl(mapUrl)) {
+        await launchUrl(
+          mapUrl,
+          mode: LaunchMode.externalApplication,
+        );
+        debugPrint('📍 Opening Maps: ${Platform.isIOS ? "Apple" : "Google"}');
+      } else {
+        debugPrint('❌ Cannot open map application');
+      }
+    } catch (e) {
+      debugPrint('❌ Error opening map: $e');
     }
   }
 
