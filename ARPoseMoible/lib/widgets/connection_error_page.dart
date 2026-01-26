@@ -90,38 +90,38 @@ class ConnectionErrorPage extends StatelessWidget {
 
               const SizedBox(height: 40),
 
-              // Bouton hexagonal allongé
-              GestureDetector(
-                onTap: onRetry,
-                child: CustomPaint(
-                  size: Size(220, 70),
-                  painter: ElongatedHexagonPainter(
-                    color: Colors.green,
+              // Bouton rectangulaire avec coins arrondis
+              ElevatedButton(
+                onPressed: onRetry,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 60,
+                    vertical: 16,
                   ),
-                  child: Container(
-                    width: 220,
-                    height: 70,
-                    alignment: Alignment.center,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Réessayer',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFFFFFFF),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Icon(
-                          Icons.refresh,
-                          color: Color(0xFFFFFFFF),
-                          size: 24,
-                        ),
-                      ],
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 8,
+                  shadowColor: Colors.black.withOpacity(0.3),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Réessayer',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    Icon(
+                      Icons.refresh,
+                      size: 24,
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -173,63 +173,4 @@ class HexagonPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(HexagonPainter oldDelegate) => oldDelegate.color != color;
-}
-
-/// Painter pour dessiner un hexagone allongé (bouton)
-class ElongatedHexagonPainter extends CustomPainter {
-  final Color color;
-
-  ElongatedHexagonPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final path = Path();
-
-    // Calculer les dimensions
-    final height = size.height;
-    final width = size.width;
-    final cornerWidth = height * 0.3; // Largeur des coins inclinés
-
-    // Dessiner l'hexagone allongé (octogone arrondi)
-    // Coin supérieur gauche
-    path.moveTo(cornerWidth, 0);
-
-    // Ligne supérieure
-    path.lineTo(width - cornerWidth, 0);
-
-    // Coin supérieur droit
-    path.lineTo(width, height / 2);
-
-    // Coin inférieur droit
-    path.lineTo(width - cornerWidth, height);
-
-    // Ligne inférieure
-    path.lineTo(cornerWidth, height);
-
-    // Coin inférieur gauche
-    path.lineTo(0, height / 2);
-
-    path.close();
-
-    // Ombre portée
-    canvas.drawShadow(path, Colors.black.withOpacity(0.3), 8, true);
-
-    // Remplissage
-    canvas.drawPath(path, paint);
-
-    // Bordure
-    final borderPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
-    canvas.drawPath(path, borderPaint);
-  }
-
-  @override
-  bool shouldRepaint(ElongatedHexagonPainter oldDelegate) =>
-      oldDelegate.color != color;
 }

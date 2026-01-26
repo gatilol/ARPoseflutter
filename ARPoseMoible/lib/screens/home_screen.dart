@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io' show Platform;
+import 'dart:ui'; // Import pour BackdropFilter
 
 import '../config/app_config.dart';
 import '../widgets/connection_error_page.dart';
@@ -193,17 +194,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
 
-            // Page d'erreur - SUPER SIMPLE maintenant !
+            // Page d'erreur
             if (_hasConnectionError)
               ConnectionErrorPage(
                 message: _errorMessage,
                 onRetry: _retryConnection,
               ),
 
-            // Loader
+            // Loader avec effet de flou
             if (isLoading && !_hasConnectionError)
-              const Center(
-                child: CircularProgressIndicator(),
+              BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
+                child: Container(
+                  color: Colors.black.withOpacity(0.2),
+                  child: const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
               ),
           ],
         ),
