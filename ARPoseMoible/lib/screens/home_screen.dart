@@ -120,6 +120,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   allowContentAccess: true,
                   cacheEnabled: true,
                   clearCache: false,
+
+                  // disable zoom controls
+                  supportZoom: false,
+                  builtInZoomControls: false,
+                  displayZoomControls: false,
+                  ignoresViewportScaleLimits: true,
                 ),
                 onWebViewCreated: _onWebViewCreated,
 
